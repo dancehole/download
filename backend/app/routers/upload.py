@@ -1,9 +1,10 @@
 import os
 import uuid
+from io import BytesIO
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 
 from ..auth import current_photographer
-from .. import models, image_service
+from .. import models, image_service, oss_service
 from ..config import STORAGE_DIR, MAX_UPLOAD_SIZE_MB
 from ..response import ok, fail
 
@@ -55,25 +56,45 @@ async def upload_photos(
         os.makedirs(d, exist_ok=True)
 
     results = []
+    use_oss = oss_service.is_enabled()
     for f in files:
         ext = os.path.splitext(f.filename)[1].lower()
         if ext not in JPG_EXT:
             continue
         safe = f"{uuid.uuid4().hex}{ext}"
         orig_path = os.path.join(orig_dir, safe)
-        prev_path = os.path.join(prev_dir, f"{uuid.uuid4().hex}.jpg")
+        prev_uuid = uuid.uuid4().hex
+        prev_path = os.path.join(prev_dir, f"{prev_uuid}.jpg")
         await _stream_to_disk(f, orig_path)
         taken_at = await image_service.process_image(orig_path, prev_path)
 
+        oss_original_key = None
+        oss_preview_key = None
+        if use_oss:
+            event_folder = ev["event_id"]
+            oss_original_key = f"{event_folder}/original/{safe}"
+            oss_preview_key = f"{event_folder}/preview/{prev_uuid}.jpg"
+            with open(orig_path, "rb") as fp:
+                oss_service.upload_fileobj(fp, oss_original_key, "image/jpeg")
+            with open(prev_path, "rb") as fp:
+                oss_service.upload_fileobj(fp, oss_preview_key, "image/jpeg")
+
         # 若 raf 目录已存在同名 RAF，则关联
         raf_path = None
+        oss_raf_key = None
         base_name = os.path.splitext(f.filename)[0]
         candidate = os.path.join(raf_dir, base_name + ".RAF")
         if os.path.exists(candidate):
             raf_path = candidate
+            if use_oss:
+                oss_raf_key = f"{ev['event_id']}/raf/{base_name}.RAF"
+                with open(candidate, "rb") as fp:
+                    oss_service.upload_fileobj(fp, oss_raf_key, "application/octet-stream")
 
         pid = await models.create_photo(
-            ev["id"], tag, tag_en, f.filename, orig_path, prev_path, raf_path, taken_at
+            ev["id"], tag, tag_en, f.filename, orig_path, prev_path, raf_path, taken_at,
+            oss_original_key=oss_original_key, oss_preview_key=oss_preview_key,
+            oss_raf_key=oss_raf_key,
         )
         results.append({
             "photo_id": pid,
@@ -100,6 +121,7 @@ async def upload_raf(
 
     saved = 0
     matched = 0
+    use_oss = oss_service.is_enabled()
     for f in files:
         if not f.filename.lower().endswith(".raf"):
             continue
@@ -107,7 +129,14 @@ async def upload_raf(
         dest = os.path.join(raf_dir, base_name + ".RAF")
         await _stream_to_disk(f, dest)
         saved += 1
-        n = await models.link_raf_by_filename_base(ev["id"], base_name, dest)
+
+        oss_raf_key = None
+        if use_oss:
+            oss_raf_key = f"{ev['event_id']}/raf/{base_name}.RAF"
+            with open(dest, "rb") as fp:
+                oss_service.upload_fileobj(fp, oss_raf_key, "application/octet-stream")
+
+        n = await models.link_raf_by_filename_base(ev["id"], base_name, dest, oss_raf_key)
         matched += n
 
     # 回填：对本次上传前已存在的同名 RAF 关联到旧照片

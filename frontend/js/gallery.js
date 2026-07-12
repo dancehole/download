@@ -271,7 +271,7 @@
     if (!state.event) return;
     $("infoAlbumId").textContent = state.event.event_id;
     $("infoPhotoCount").textContent = state.event.photo_count + " " + I18N.t("photos_unit");
-    $("infoShareLink").value = location.origin + "/share/" + state.event.share_token;
+    $("infoShareLink").value = location.origin + API.getAutoPrefix() + "/share/" + state.event.share_token;
   }
 
   // ===== 事件绑定 =====

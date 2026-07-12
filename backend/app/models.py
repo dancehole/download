@@ -83,26 +83,35 @@ async def increment_photo_count(event_pk: int, n: int):
 
 # ---------- 照片 ----------
 async def create_photo(event_pk: int, tag, tag_en, filename: str, original_path: str,
-                       preview_path: str, raf_path, taken_at):
+                       preview_path: str, raf_path, taken_at,
+                       oss_original_key=None, oss_preview_key=None, oss_raf_key=None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 "INSERT INTO photo (event_id, tag, tag_en, filename, original_path, preview_path, "
-                "raf_path, taken_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (event_pk, tag, tag_en, filename, original_path, preview_path, raf_path, taken_at),
+                "raf_path, taken_at, oss_original_key, oss_preview_key, oss_raf_key) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (event_pk, tag, tag_en, filename, original_path, preview_path, raf_path, taken_at,
+                 oss_original_key, oss_preview_key, oss_raf_key),
             )
             await conn.commit()
             return cur.lastrowid
 
 
-async def update_photo_raf(photo_id: int, raf_path: str):
+async def update_photo_raf(photo_id: int, raf_path: str, oss_raf_key=None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE photo SET raf_path=%s WHERE id=%s", (raf_path, photo_id)
-            )
+            if oss_raf_key is not None:
+                await cur.execute(
+                    "UPDATE photo SET raf_path=%s, oss_raf_key=%s WHERE id=%s",
+                    (raf_path, oss_raf_key, photo_id),
+                )
+            else:
+                await cur.execute(
+                    "UPDATE photo SET raf_path=%s WHERE id=%s", (raf_path, photo_id)
+                )
             await conn.commit()
 
 
@@ -144,16 +153,24 @@ async def list_photos(event_pk: int, tag=None, page=1, size=30):
     return total, rows
 
 
-async def link_raf_by_filename_base(event_pk: int, base_name: str, raf_path: str) -> int:
+async def link_raf_by_filename_base(event_pk: int, base_name: str, raf_path: str,
+                                     oss_raf_key=None) -> int:
     """按文件名主干匹配照片并回填 raf_path（仅回填尚未关联的）。"""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE photo SET raf_path=%s WHERE event_id=%s AND filename LIKE %s "
-                "AND (raf_path IS NULL OR raf_path='')",
-                (raf_path, event_pk, base_name + ".%"),
-            )
+            if oss_raf_key is not None:
+                await cur.execute(
+                    "UPDATE photo SET raf_path=%s, oss_raf_key=%s WHERE event_id=%s AND filename LIKE %s "
+                    "AND (raf_path IS NULL OR raf_path='')",
+                    (raf_path, oss_raf_key, event_pk, base_name + ".%"),
+                )
+            else:
+                await cur.execute(
+                    "UPDATE photo SET raf_path=%s WHERE event_id=%s AND filename LIKE %s "
+                    "AND (raf_path IS NULL OR raf_path='')",
+                    (raf_path, event_pk, base_name + ".%"),
+                )
             n = cur.rowcount
             await conn.commit()
             return n
@@ -194,3 +211,25 @@ async def get_tags(event_pk: int):
                 (event_pk,),
             )
             return await cur.fetchall()
+
+
+# ---------- 设置 ----------
+async def get_setting(key: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT setting_value FROM setting WHERE setting_key=%s", (key,))
+            row = await cur.fetchone()
+            return row["setting_value"] if row else None
+
+
+async def set_setting(key: str, value):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO setting (setting_key, setting_value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)",
+                (key, str(value) if value is not None else None),
+            )
+            await conn.commit()

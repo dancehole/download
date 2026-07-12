@@ -1,4 +1,5 @@
 from datetime import datetime
+from . import oss_service
 
 
 def ok(data=None, msg="ok"):
@@ -29,8 +30,24 @@ def event_to_dict(ev: dict) -> dict:
 
 
 def photo_to_dict(p: dict, token: str) -> dict:
-    # 路径相对于 API 根（不含 /api 前缀），由前端按可配置的 API 地址拼接
     base = f"/share/{token}/photos/{p['id']}"
+    use_oss = oss_service.is_enabled()
+
+    if use_oss and p.get("oss_preview_key"):
+        preview_url = oss_service.get_url(p["oss_preview_key"])
+    else:
+        preview_url = f"{base}/preview"
+
+    if use_oss and p.get("oss_original_key"):
+        original_url = oss_service.get_url(p["oss_original_key"])
+    else:
+        original_url = f"{base}/original"
+
+    if use_oss and p.get("oss_raf_key"):
+        raf_url = oss_service.get_url(p["oss_raf_key"])
+    else:
+        raf_url = f"{base}/raf"
+
     return {
         "photo_id": p["id"],
         "tag": p["tag"],
@@ -39,7 +56,7 @@ def photo_to_dict(p: dict, token: str) -> dict:
         "taken_at": _dt(p["taken_at"]),
         "uploaded_at": _dt(p["uploaded_at"]),
         "has_raf": bool(p["raf_path"]),
-        "preview_url": f"{base}/preview",
-        "original_url": f"{base}/original",
-        "raf_url": f"{base}/raf",
+        "preview_url": preview_url,
+        "original_url": original_url,
+        "raf_url": raf_url,
     }

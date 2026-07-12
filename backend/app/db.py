@@ -90,6 +90,26 @@ async def init_db():
                 )
             except Exception:
                 pass  # 列已存在
+
+            await cur.execute("""
+                CREATE TABLE IF NOT EXISTS setting (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    setting_key VARCHAR(64) NOT NULL UNIQUE,
+                    setting_value TEXT,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+
+            # 兼容已存在的数据库：若 photo 缺 oss_ 列则自动追加
+            for col_def in [
+                "ADD COLUMN oss_original_key VARCHAR(512) DEFAULT NULL AFTER preview_path",
+                "ADD COLUMN oss_preview_key VARCHAR(512) DEFAULT NULL AFTER oss_original_key",
+                "ADD COLUMN oss_raf_key VARCHAR(512) DEFAULT NULL AFTER oss_preview_key",
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE photo {col_def}")
+                except Exception:
+                    pass
         await conn.commit()
 
     # 确保默认摄影师存在

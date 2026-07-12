@@ -4,18 +4,38 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
-from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR
+from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR, APP_PREFIX
 from .db import init_db, close_pool
-from .routers import auth, events, upload, share
+from .routers import auth, events, upload, share, settings as settings_router
 from .response import ok
+from . import oss_service
+from .models import get_setting
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(STORAGE_DIR, exist_ok=True)
     await init_db()
+
+    # 从数据库加载 OSS 配置
+    oss_cfg = {}
+    for key, field in [
+        ("oss_enabled", "enabled"),
+        ("oss_access_key_id", "access_key_id"),
+        ("oss_access_key_secret", "access_key_secret"),
+        ("oss_endpoint", "endpoint"),
+        ("oss_bucket", "bucket"),
+        ("oss_custom_domain", "custom_domain"),
+    ]:
+        v = await get_setting(key)
+        if v is not None:
+            oss_cfg[field] = v
+    if oss_cfg.get("enabled"):
+        oss_cfg["enabled"] = str(oss_cfg["enabled"]).lower() in ("1", "true", "yes")
+    oss_service.init_oss(oss_cfg)
+
     yield
     await close_pool()
 
@@ -30,27 +50,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API 路由
-app.include_router(auth.router, prefix="/api")
-app.include_router(events.router, prefix="/api")
-app.include_router(upload.router, prefix="/api")
-app.include_router(share.router, prefix="/api")
+# API 路由（带前缀）
+p = APP_PREFIX
+app.include_router(auth.router, prefix=p + "/api")
+app.include_router(events.router, prefix=p + "/api")
+app.include_router(upload.router, prefix=p + "/api")
+app.include_router(share.router, prefix=p + "/api")
+app.include_router(settings_router.router, prefix=p)
 
 
-@app.get("/api/health")
+@app.get(p + "/api/health")
 async def health():
     return ok({"status": "ok"})
 
 
 # 前端静态资源（css/js/assets）
 if os.path.isdir(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+    app.mount(p + "/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 
 def _html_response(path: str):
-    """返回 HTML 文件，禁用缓存确保每次拿到最新版本。"""
-    return FileResponse(
-        path,
+    """返回 HTML 文件，禁用缓存确保每次拿到最新版本。
+    如果配置了 APP_PREFIX，自动替换 /static/ 路径为带前缀的路径。
+    """
+    import re
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if APP_PREFIX:
+        # 替换 /static/ 为 {prefix}/static/
+        content = re.sub(r'=["\']/static/', f'="{APP_PREFIX}/static/', content)
+    return Response(
+        content=content,
         media_type="text/html",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -60,16 +90,23 @@ def _html_response(path: str):
     )
 
 
-@app.get("/admin")
+@app.get(p + "/admin")
 async def admin_page():
     return _html_response(os.path.join(FRONTEND_DIR, "admin.html"))
 
 
-@app.get("/share/{token}")
+@app.get(p + "/share/{token}")
 async def share_page(token: str):
     return _html_response(os.path.join(FRONTEND_DIR, "gallery.html"))
 
 
-@app.get("/")
+@app.get(p + "/")
 async def root():
-    return RedirectResponse(url="/admin", status_code=302)
+    return RedirectResponse(url=p + "/admin", status_code=302)
+
+
+# 无前缀时，根路径也跳转
+if APP_PREFIX:
+    @app.get("/")
+    async def root_redirect():
+        return RedirectResponse(url=APP_PREFIX + "/admin", status_code=302)

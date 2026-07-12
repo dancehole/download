@@ -6,4 +6,5 @@ PyJWT>=2.8
 bcrypt>=4.1
 python-multipart>=0.0.9
 python-dotenv>=1.0
+oss2>=2.19
 cryptography>=41.0

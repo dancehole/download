@@ -4,14 +4,39 @@
 
   const TOKEN_KEY = "admin_token";
 
+  // 自动从当前 URL 推断路径前缀
+  // 例如 URL 是 /activity_image_list/admin → 前缀是 /activity_image_list
+  // URL 是 /admin → 前缀是 ""
+  function _detectPrefix() {
+    const path = location.pathname;
+    // 尝试匹配常见页面路径
+    const patterns = [
+      /^(.+)\/admin(\/|$)/,
+      /^(.+)\/share(\/|$)/,
+      /^(.+)\/api(\/|$)/,
+    ];
+    for (const re of patterns) {
+      const m = path.match(re);
+      if (m && m[1]) {
+        return m[1].replace(/\/+$/, "");
+      }
+    }
+    return "";
+  }
+
+  const AUTO_PREFIX = _detectPrefix();
+
   function getBase() {
     let b = localStorage.getItem("api_base");
-    if (!b) b = "api";
+    if (!b) b = AUTO_PREFIX + "/api";
     // 去除末尾斜杠
     return b.replace(/\/+$/, "");
   }
   function setBase(b) {
     localStorage.setItem("api_base", (b || "").trim());
+  }
+  function getAutoPrefix() {
+    return AUTO_PREFIX;
   }
 
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
@@ -73,6 +98,7 @@
   const API = {
     getBase: getBase,
     setBase: setBase,
+    getAutoPrefix: getAutoPrefix,
     url: url,
     getToken: getToken,
     setToken: setToken,
@@ -108,6 +134,13 @@
       for (let i = 0; i < files.length; i++) fd.append("files", files[i]);
       return request("/events/" + encodeURIComponent(eventId) + "/upload-raf", { method: "POST", body: fd });
     },
+
+    // 设置
+    getOssSettings: function () { return request("/admin/settings/oss"); },
+    updateOssSettings: function (cfg) {
+      return request("/admin/settings/oss", { method: "PUT", json: cfg });
+    },
+    testOss: function () { return request("/admin/settings/oss/test", { method: "POST" }); },
 
     // 公开访问
     shareInfo: function (token) { return request("/share/" + encodeURIComponent(token)); },

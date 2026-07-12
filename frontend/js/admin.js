@@ -61,6 +61,7 @@
   function showView(id) {
     $("viewEvents").hidden = id !== "viewEvents";
     $("viewDetail").hidden = id !== "viewDetail";
+    $("viewSettings").hidden = id !== "viewSettings";
   }
 
   async function doLogin() {
@@ -121,7 +122,7 @@
         const act = b.dataset.act;
         if (act === "enter") openEvent(b.dataset.id);
         else if (act === "copy") copyShare(b.dataset.token);
-        else if (act === "open") window.open("/share/" + b.dataset.token, "_blank");
+        else if (act === "open") window.open(API.getAutoPrefix() + "/share/" + b.dataset.token, "_blank");
       });
     });
   }
@@ -169,7 +170,7 @@
     $("detailId").textContent = "ID: " + ev.event_id;
     $("detailCount").textContent = I18N.t("photos_count", { n: ev.photo_count });
     $("detailCreated").textContent = I18N.t("created_at") + ": " + (ev.created_at || "");
-    $("shareLink").value = location.origin + "/share/" + ev.share_token;
+    $("shareLink").value = location.origin + API.getAutoPrefix() + "/share/" + ev.share_token;
   }
 
   async function loadThumbs() {
@@ -192,7 +193,7 @@
   }
 
   async function copyShare(token) {
-    const link = location.origin + "/share/" + token;
+    const link = location.origin + API.getAutoPrefix() + "/share/" + token;
     try {
       await navigator.clipboard.writeText(link);
       toast(I18N.t("copied"), "ok");
@@ -301,6 +302,67 @@
     }
   }
 
+  // ===== 设置 =====
+  async function loadOssSettings() {
+    try {
+      const cfg = await API.getOssSettings();
+      $("ossEnabled").checked = cfg.enabled;
+      $("ossAccessKeyId").value = cfg.access_key_id || "";
+      $("ossAccessKeySecret").value = cfg.access_key_secret_masked || "";
+      $("ossEndpoint").value = cfg.endpoint || "";
+      $("ossBucket").value = cfg.bucket || "";
+      $("ossCustomDomain").value = cfg.custom_domain || "";
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  async function saveOssSettings() {
+    const btn = $("saveSettingsBtn");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = I18N.t("saving");
+    try {
+      const cfg = {
+        enabled: $("ossEnabled").checked,
+        access_key_id: $("ossAccessKeyId").value.trim(),
+        access_key_secret: $("ossAccessKeySecret").value,
+        endpoint: $("ossEndpoint").value.trim(),
+        bucket: $("ossBucket").value.trim(),
+        custom_domain: $("ossCustomDomain").value.trim(),
+      };
+      const result = await API.updateOssSettings(cfg);
+      $("ossAccessKeySecret").value = result.access_key_secret_masked || "";
+      toast(I18N.t("save_success"), "ok");
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  async function testOssConnection() {
+    const btn = $("testOssBtn");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = I18N.t("testing");
+    try {
+      await API.testOss();
+      toast(I18N.t("oss_test_success"), "ok");
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("oss_test_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  function openSettings() {
+    showView("viewSettings");
+    loadOssSettings();
+  }
+
   // ===== 事件绑定 =====
   function bindEvents() {
     $("loginSubmit").addEventListener("click", doLogin);
@@ -314,9 +376,13 @@
 
     $("navEvents").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
     $("backBtn").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
+    $("settingsBtn").addEventListener("click", openSettings);
+    $("backFromSettings").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
+    $("saveSettingsBtn").addEventListener("click", saveOssSettings);
+    $("testOssBtn").addEventListener("click", testOssConnection);
 
     $("copyShare").addEventListener("click", () => copyShare(state.currentEvent.share_token));
-    $("openShare").addEventListener("click", () => window.open("/share/" + state.currentEvent.share_token, "_blank"));
+    $("openShare").addEventListener("click", () => window.open(API.getAutoPrefix() + "/share/" + state.currentEvent.share_token, "_blank"));
     $("regenBtn").addEventListener("click", regenShare);
 
     setupDropzone("dropzoneJpg", "jpgInput", "jpgFiles", "jpg");
