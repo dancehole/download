@@ -99,7 +99,7 @@ async def init_db():
             row = await cur.fetchone()
             if not row:
                 await cur.execute(
-                    "INSERT INTO photographer (username, password_hash) VALUES (%s, %s)",
+                    "INSERT IGNORE INTO photographer (username, password_hash) VALUES (%s, %s)",
                     (DEFAULT_ADMIN_USER, hash_password(DEFAULT_ADMIN_PASSWORD)),
                 )
             await conn.commit()

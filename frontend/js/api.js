@@ -6,7 +6,7 @@
 
   function getBase() {
     let b = localStorage.getItem("api_base");
-    if (!b) b = "/api";
+    if (!b) b = "api";
     // 去除末尾斜杠
     return b.replace(/\/+$/, "");
   }
