@@ -224,7 +224,7 @@
       spinner.hidden = true;
     };
     tmp.onerror = () => { spinner.hidden = true; };
-    tmp.src = API.url(p.original_url);
+    tmp.src = API.url(p.preview_url);
   }
   function renderLightboxBar() {
     const bar = $("lbBar");
