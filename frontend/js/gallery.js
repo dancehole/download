@@ -146,6 +146,7 @@
       img.loading = "lazy";
       img.alt = p.filename || "";
       img.dataset.src = API.url(p.preview_url);
+      img.dataset.fallback = API.url(p.fallback_preview_url);
       card.appendChild(img);
       if (p.tag) {
         const badge = document.createElement("div");
@@ -164,19 +165,29 @@
     });
   }
 
-  // 懒加载 + 渐入
+  // 懒加载 + 渐入 + OSS失败降级
   function lazyLoad(card, img, skeleton) {
     const io = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
         if (en.isIntersecting) {
           const src = img.dataset.src;
+          const fallback = img.dataset.fallback;
           if (!src) return;
-          img.onload = () => {
-            if (skeleton && skeleton.parentNode) skeleton.parentNode.removeChild(skeleton);
-            card.classList.add("in");
+          const load = (url) => {
+            img.onload = () => {
+              if (skeleton && skeleton.parentNode) skeleton.parentNode.removeChild(skeleton);
+              card.classList.add("in");
+            };
+            img.onerror = () => {
+              if (fallback && img.src !== fallback) {
+                load(fallback);
+              } else {
+                if (skeleton) skeleton.style.opacity = 0.5;
+              }
+            };
+            img.src = url;
           };
-          img.onerror = () => { if (skeleton) skeleton.style.opacity = 0.5; };
-          img.src = src;
+          load(src);
           io.disconnect();
         }
       });
@@ -189,6 +200,7 @@
     state.lbIndex = index;
     state.zoomed = false;
     state.panX = 0; state.panY = 0;
+    state.lbShowingOriginal = false;
     $("lightbox").hidden = false;
     document.body.style.overflow = "hidden";
     loadLightboxImage();
@@ -206,6 +218,7 @@
     state.lbIndex = (state.lbIndex + dir + n) % n;
     state.zoomed = false;
     state.panX = 0; state.panY = 0;
+    state.lbShowingOriginal = false;
     loadLightboxImage();
     renderLightboxBar();
   }
@@ -217,14 +230,33 @@
     img.classList.remove("loaded");
     img.style.transform = "";
     spinner.hidden = false;
-    const tmp = new Image();
-    tmp.onload = () => {
-      img.src = tmp.src;
-      img.classList.add("loaded");
-      spinner.hidden = true;
+
+    const url = state.lbShowingOriginal ? p.original_url : p.preview_url;
+    const fallbackUrl = state.lbShowingOriginal ? p.fallback_original_url : p.fallback_preview_url;
+
+    const load = (src) => {
+      const tmp = new Image();
+      tmp.onload = () => {
+        img.src = tmp.src;
+        img.classList.add("loaded");
+        spinner.hidden = true;
+      };
+      tmp.onerror = () => {
+        if (fallbackUrl && src !== API.url(fallbackUrl)) {
+          load(API.url(fallbackUrl));
+        } else {
+          spinner.hidden = true;
+        }
+      };
+      tmp.src = src;
     };
-    tmp.onerror = () => { spinner.hidden = true; };
-    tmp.src = API.url(p.preview_url);
+
+    load(API.url(url));
+  }
+  function toggleLightboxOriginal() {
+    state.lbShowingOriginal = !state.lbShowingOriginal;
+    loadLightboxImage();
+    renderLightboxBar();
   }
   function renderLightboxBar() {
     const bar = $("lbBar");
@@ -232,14 +264,15 @@
     const p = state.photos[state.lbIndex];
     if (!p) { bar.innerHTML = ""; return; }
     const rafDisabled = p.has_raf ? "" : " disabled";
+    const viewBtnText = state.lbShowingOriginal ? I18N.t("view_preview") : I18N.t("view_original");
     bar.innerHTML = `
-      <button class="lb-action primary" id="actViewOrig">${I18N.t("view_original")}</button>
+      <button class="lb-action primary" id="actViewOrig">${viewBtnText}</button>
       <button class="lb-action" id="actDlOrig">${I18N.t("download_original")}</button>
       <button class="lb-action${rafDisabled}" id="actViewRaf">${I18N.t("view_raf")}</button>
       <button class="lb-action${rafDisabled}" id="actDlRaf">${I18N.t("download_raf")}</button>
     `;
     const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
-    bind("actViewOrig", () => openPhotoUrl(p.original_url, false));
+    bind("actViewOrig", toggleLightboxOriginal);
     bind("actDlOrig", () => openPhotoUrl(p.original_url, true));
     bind("actViewRaf", () => p.has_raf && openPhotoUrl(p.raf_url, false));
     bind("actDlRaf", () => p.has_raf && openPhotoUrl(p.raf_url, true));

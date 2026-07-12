@@ -33,20 +33,13 @@ def photo_to_dict(p: dict, token: str) -> dict:
     base = f"/share/{token}/photos/{p['id']}"
     use_oss = oss_service.is_enabled()
 
-    if use_oss and p.get("oss_preview_key"):
-        preview_url = oss_service.get_url(p["oss_preview_key"])
-    else:
-        preview_url = f"{base}/preview"
+    local_preview = f"{base}/preview"
+    local_original = f"{base}/original"
+    local_raf = f"{base}/raf"
 
-    if use_oss and p.get("oss_original_key"):
-        original_url = oss_service.get_url(p["oss_original_key"])
-    else:
-        original_url = f"{base}/original"
-
-    if use_oss and p.get("oss_raf_key"):
-        raf_url = oss_service.get_url(p["oss_raf_key"])
-    else:
-        raf_url = f"{base}/raf"
+    oss_preview = oss_service.get_url(p["oss_preview_key"]) if use_oss and p.get("oss_preview_key") else None
+    oss_original = oss_service.get_url(p["oss_original_key"]) if use_oss and p.get("oss_original_key") else None
+    oss_raf = oss_service.get_url(p["oss_raf_key"]) if use_oss and p.get("oss_raf_key") else None
 
     return {
         "photo_id": p["id"],
@@ -56,7 +49,10 @@ def photo_to_dict(p: dict, token: str) -> dict:
         "taken_at": _dt(p["taken_at"]),
         "uploaded_at": _dt(p["uploaded_at"]),
         "has_raf": bool(p["raf_path"]),
-        "preview_url": preview_url,
-        "original_url": original_url,
-        "raf_url": raf_url,
+        "preview_url": oss_preview or local_preview,
+        "original_url": oss_original or local_original,
+        "raf_url": oss_raf or local_raf,
+        "fallback_preview_url": local_preview,
+        "fallback_original_url": local_original,
+        "fallback_raf_url": local_raf,
     }
