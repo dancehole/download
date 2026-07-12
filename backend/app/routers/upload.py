@@ -35,6 +35,7 @@ async def _stream_to_disk(upload: UploadFile, dest: str):
 async def upload_photos(
     event_id: str,
     tag: str = Form(default=""),
+    tag_en: str = Form(default=""),
     files: list[UploadFile] = File(...),
     user: dict = Depends(current_photographer),
 ):
@@ -45,6 +46,7 @@ async def upload_photos(
         return fail(400, "未选择文件")
 
     tag = (tag or "").strip() or None
+    tag_en = (tag_en or "").strip() or tag  # 缺省用中文标签
     base = os.path.join(STORAGE_DIR, ev["event_id"])
     orig_dir = os.path.join(base, "original")
     prev_dir = os.path.join(base, "preview")
@@ -71,7 +73,7 @@ async def upload_photos(
             raf_path = candidate
 
         pid = await models.create_photo(
-            ev["id"], tag, f.filename, orig_path, prev_path, raf_path, taken_at
+            ev["id"], tag, tag_en, f.filename, orig_path, prev_path, raf_path, taken_at
         )
         results.append({
             "photo_id": pid,

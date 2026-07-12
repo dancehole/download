@@ -96,10 +96,11 @@
     },
 
     // 上传
-    uploadPhotos: function (eventId, files, tag) {
+    uploadPhotos: function (eventId, files, tag, tagEn) {
       const fd = new FormData();
       for (let i = 0; i < files.length; i++) fd.append("files", files[i]);
       if (tag) fd.append("tag", tag);
+      if (tagEn) fd.append("tag_en", tagEn);
       return request("/events/" + encodeURIComponent(eventId) + "/upload", { method: "POST", body: fd });
     },
     uploadRaf: function (eventId, files) {

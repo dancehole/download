@@ -50,14 +50,15 @@
 
   // ===== 标签渲染 =====
   function renderTags(tags) {
+    const isEn = I18N.getLang() === "en";
     const all = [{ tag: null, count: state.event ? state.event.photo_count : 0 }];
-    const list = all.concat(tags.map((t) => ({ tag: t.tag, count: t.count })));
+    const list = all.concat(tags.map((t) => ({ tag: t.tag, tag_en: t.tag_en, count: t.count })));
     tagbarInner.innerHTML = "";
     list.forEach((t) => {
       const b = document.createElement("button");
       b.className = "tag-pill" + (t.tag === state.activeTag ? " active" : "");
       b.type = "button";
-      const label = t.tag === null ? I18N.t("filter_all") : t.tag;
+      const label = t.tag === null ? I18N.t("filter_all") : (isEn ? (t.tag_en || t.tag) : t.tag);
       b.innerHTML = `<span>${escapeHtml(label)}</span><span class="cnt">${t.count}</span>`;
       b.addEventListener("click", () => {
         if (state.activeTag === t.tag) return;
@@ -149,7 +150,7 @@
       if (p.tag) {
         const badge = document.createElement("div");
         badge.className = "tag-badge";
-        badge.textContent = p.tag;
+        badge.textContent = I18N.getLang() === "en" ? (p.tag_en || p.tag) : p.tag;
         card.appendChild(badge);
       }
       if (p.has_raf) {

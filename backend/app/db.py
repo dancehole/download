@@ -70,6 +70,7 @@ async def init_db():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     event_id INT NOT NULL,
                     tag VARCHAR(64) DEFAULT NULL,
+                    tag_en VARCHAR(64) DEFAULT NULL,
                     filename VARCHAR(255) NOT NULL,
                     original_path VARCHAR(512) NOT NULL,
                     preview_path VARCHAR(512) NOT NULL,
@@ -82,6 +83,13 @@ async def init_db():
                         FOREIGN KEY (event_id) REFERENCES event(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
+            # 兼容已存在的数据库：若缺 tag_en 列则自动追加
+            try:
+                await cur.execute(
+                    "ALTER TABLE photo ADD COLUMN tag_en VARCHAR(64) DEFAULT NULL AFTER tag"
+                )
+            except Exception:
+                pass  # 列已存在
         await conn.commit()
 
     # 确保默认摄影师存在

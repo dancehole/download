@@ -37,7 +37,7 @@ async def share_info(token: str):
         return fail(404, "相册不存在或链接已失效")
     tags = await models.get_tags(ev["id"])
     data = event_to_dict(ev)
-    data["tags"] = [{"tag": t["tag"], "count": t["cnt"]} for t in tags]
+    data["tags"] = [{"tag": t["tag"], "tag_en": t.get("tag_en") or t["tag"], "count": t["cnt"]} for t in tags]
     return ok(data)
 
 

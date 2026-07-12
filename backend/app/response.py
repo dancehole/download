@@ -34,6 +34,7 @@ def photo_to_dict(p: dict, token: str) -> dict:
     return {
         "photo_id": p["id"],
         "tag": p["tag"],
+        "tag_en": p.get("tag_en") or p["tag"],
         "filename": p["filename"],
         "taken_at": _dt(p["taken_at"]),
         "uploaded_at": _dt(p["uploaded_at"]),

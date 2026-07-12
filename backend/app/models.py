@@ -82,15 +82,15 @@ async def increment_photo_count(event_pk: int, n: int):
 
 
 # ---------- 照片 ----------
-async def create_photo(event_pk: int, tag, filename: str, original_path: str,
+async def create_photo(event_pk: int, tag, tag_en, filename: str, original_path: str,
                        preview_path: str, raf_path, taken_at):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO photo (event_id, tag, filename, original_path, preview_path, "
-                "raf_path, taken_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (event_pk, tag, filename, original_path, preview_path, raf_path, taken_at),
+                "INSERT INTO photo (event_id, tag, tag_en, filename, original_path, preview_path, "
+                "raf_path, taken_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (event_pk, tag, tag_en, filename, original_path, preview_path, raf_path, taken_at),
             )
             await conn.commit()
             return cur.lastrowid
@@ -188,9 +188,9 @@ async def get_tags(event_pk: int):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT tag, COUNT(*) AS cnt FROM photo "
+                "SELECT tag, tag_en, COUNT(*) AS cnt FROM photo "
                 "WHERE event_id=%s AND tag IS NOT NULL AND tag<>'' "
-                "GROUP BY tag ORDER BY MIN(uploaded_at) ASC",
+                "GROUP BY tag, tag_en ORDER BY MIN(uploaded_at) ASC",
                 (event_pk,),
             )
             return await cur.fetchall()

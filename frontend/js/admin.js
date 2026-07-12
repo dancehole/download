@@ -182,7 +182,7 @@
       grid.innerHTML = photos.map((p) => `
         <div class="thumb">
           <img loading="lazy" src="${API.url(p.preview_url)}" alt="">
-          ${p.tag ? `<span class="ttag">${escapeHtml(p.tag)}</span>` : ""}
+          ${p.tag ? `<span class="ttag">${escapeHtml(I18N.getLang() === "en" ? (p.tag_en || p.tag) : p.tag)}</span>` : ""}
           ${p.has_raf ? `<span class="traf"></span>` : ""}
         </div>
       `).join("");
@@ -254,16 +254,18 @@
     if (state.jpgFiles.length === 0) return;
     const btn = $("uploadBtn");
     const tag = $("uploadTag").value.trim() || null;
+    const tagEn = $("uploadTagEn").value.trim() || null;
     btn.disabled = true;
     const orig = btn.textContent;
     btn.textContent = I18N.t("uploading");
     try {
-      const data = await API.uploadPhotos(state.currentEvent.event_id, state.jpgFiles, tag);
+      const data = await API.uploadPhotos(state.currentEvent.event_id, state.jpgFiles, tag, tagEn);
       toast(I18N.t("upload_success", { n: data.uploaded }), "ok");
       state.jpgFiles = [];
       $("jpgFiles").innerHTML = "";
       $("jpgInput").value = "";
       $("uploadTag").value = "";
+      $("uploadTagEn").value = "";
       $("uploadBtn").disabled = true;
       // 刷新活动信息与缩略图
       state.currentEvent = await API.getEvent(state.currentEvent.event_id);
