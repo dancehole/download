@@ -189,6 +189,7 @@
     state.lbIndex = index;
     state.zoomed = false;
     state.panX = 0; state.panY = 0;
+    state.lbShowingOriginal = false;
     $("lightbox").hidden = false;
     document.body.style.overflow = "hidden";
     loadLightboxImage();
@@ -206,6 +207,7 @@
     state.lbIndex = (state.lbIndex + dir + n) % n;
     state.zoomed = false;
     state.panX = 0; state.panY = 0;
+    state.lbShowingOriginal = false;
     loadLightboxImage();
     renderLightboxBar();
   }
@@ -224,7 +226,13 @@
       spinner.hidden = true;
     };
     tmp.onerror = () => { spinner.hidden = true; };
-    tmp.src = API.url(p.original_url);
+    const url = state.lbShowingOriginal ? p.original_url : p.preview_url;
+    tmp.src = API.url(url);
+  }
+  function toggleLightboxOriginal() {
+    state.lbShowingOriginal = !state.lbShowingOriginal;
+    loadLightboxImage();
+    renderLightboxBar();
   }
   function renderLightboxBar() {
     const bar = $("lbBar");
@@ -232,14 +240,15 @@
     const p = state.photos[state.lbIndex];
     if (!p) { bar.innerHTML = ""; return; }
     const rafDisabled = p.has_raf ? "" : " disabled";
+    const viewBtnText = state.lbShowingOriginal ? I18N.t("view_preview") : I18N.t("view_original");
     bar.innerHTML = `
-      <button class="lb-action primary" id="actViewOrig">${I18N.t("view_original")}</button>
+      <button class="lb-action primary" id="actViewOrig">${viewBtnText}</button>
       <button class="lb-action" id="actDlOrig">${I18N.t("download_original")}</button>
       <button class="lb-action${rafDisabled}" id="actViewRaf">${I18N.t("view_raf")}</button>
       <button class="lb-action${rafDisabled}" id="actDlRaf">${I18N.t("download_raf")}</button>
     `;
     const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
-    bind("actViewOrig", () => openPhotoUrl(p.original_url, false));
+    bind("actViewOrig", toggleLightboxOriginal);
     bind("actDlOrig", () => openPhotoUrl(p.original_url, true));
     bind("actViewRaf", () => p.has_raf && openPhotoUrl(p.raf_url, false));
     bind("actDlRaf", () => p.has_raf && openPhotoUrl(p.raf_url, true));
