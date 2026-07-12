@@ -70,15 +70,9 @@ if os.path.isdir(FRONTEND_DIR):
 
 
 def _html_response(path: str):
-    """返回 HTML 文件，禁用缓存确保每次拿到最新版本。
-    如果配置了 APP_PREFIX，自动替换 /static/ 路径为带前缀的路径。
-    """
-    import re
+    """返回 HTML 文件，禁用缓存确保每次拿到最新版本。"""
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
-    if APP_PREFIX:
-        # 替换 /static/ 为 {prefix}/static/
-        content = re.sub(r'=["\']/static/', f'="{APP_PREFIX}/static/', content)
     return Response(
         content=content,
         media_type="text/html",
