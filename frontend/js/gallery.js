@@ -146,6 +146,7 @@
       img.loading = "lazy";
       img.alt = p.filename || "";
       img.dataset.src = API.url(p.preview_url);
+      img.dataset.fallback = API.url(p.fallback_preview_url);
       card.appendChild(img);
       if (p.tag) {
         const badge = document.createElement("div");
@@ -164,19 +165,29 @@
     });
   }
 
-  // 懒加载 + 渐入
+  // 懒加载 + 渐入 + OSS失败降级
   function lazyLoad(card, img, skeleton) {
     const io = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
         if (en.isIntersecting) {
           const src = img.dataset.src;
+          const fallback = img.dataset.fallback;
           if (!src) return;
-          img.onload = () => {
-            if (skeleton && skeleton.parentNode) skeleton.parentNode.removeChild(skeleton);
-            card.classList.add("in");
+          const load = (url) => {
+            img.onload = () => {
+              if (skeleton && skeleton.parentNode) skeleton.parentNode.removeChild(skeleton);
+              card.classList.add("in");
+            };
+            img.onerror = () => {
+              if (fallback && img.src !== fallback) {
+                load(fallback);
+              } else {
+                if (skeleton) skeleton.style.opacity = 0.5;
+              }
+            };
+            img.src = url;
           };
-          img.onerror = () => { if (skeleton) skeleton.style.opacity = 0.5; };
-          img.src = src;
+          load(src);
           io.disconnect();
         }
       });
@@ -219,15 +230,28 @@
     img.classList.remove("loaded");
     img.style.transform = "";
     spinner.hidden = false;
-    const tmp = new Image();
-    tmp.onload = () => {
-      img.src = tmp.src;
-      img.classList.add("loaded");
-      spinner.hidden = true;
-    };
-    tmp.onerror = () => { spinner.hidden = true; };
+
     const url = state.lbShowingOriginal ? p.original_url : p.preview_url;
-    tmp.src = API.url(url);
+    const fallbackUrl = state.lbShowingOriginal ? p.fallback_original_url : p.fallback_preview_url;
+
+    const load = (src) => {
+      const tmp = new Image();
+      tmp.onload = () => {
+        img.src = tmp.src;
+        img.classList.add("loaded");
+        spinner.hidden = true;
+      };
+      tmp.onerror = () => {
+        if (fallbackUrl && src !== API.url(fallbackUrl)) {
+          load(API.url(fallbackUrl));
+        } else {
+          spinner.hidden = true;
+        }
+      };
+      tmp.src = src;
+    };
+
+    load(API.url(url));
   }
   function toggleLightboxOriginal() {
     state.lbShowingOriginal = !state.lbShowingOriginal;
