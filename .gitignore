@@ -1,0 +1,20 @@
+# 上传的照片（体积大，不纳入版本控制）
+backend/storage/
+
+# Python 虚拟环境
+backend/venv/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 环境配置（含密码等敏感信息）
+backend/.env
+
+# IDE
+.trae/
+.vscode/
+.idea/
+
+# Office 临时文件
+~$*

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0d">
+  <title>活动照片流</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/gallery.css?v=3">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand-mark"></span>
+      <h1 class="brand" id="brandTitle">活动照片流</h1>
+    </div>
+    <div class="topbar-right">
+      <button class="lang-toggle" id="langToggle" type="button" aria-label="语言">
+        <span class="lang-opt" data-lang="zh">中文</span>
+        <span class="lang-sep">/</span>
+        <span class="lang-opt" data-lang="en">EN</span>
+      </button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="设置">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="icon-btn" id="infoBtn" type="button" aria-label="相册信息">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="tagbar" id="tagbar" aria-label="标签筛选">
+    <div class="tagbar-inner" id="tagbarInner"></div>
+  </nav>
+
+  <main class="stream-wrap">
+    <div class="stream" id="stream"></div>
+    <div class="stream-footer" id="streamFooter"></div>
+  </main>
+
+  <!-- 灯箱 -->
+  <div class="lightbox" id="lightbox" hidden>
+    <div class="lb-backdrop" id="lbBackdrop"></div>
+    <button class="lb-nav lb-prev" id="lbPrev" type="button" aria-label="上一张">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="lb-stage" id="lbStage">
+      <div class="lb-spinner" id="lbSpinner"></div>
+      <img id="lbImg" alt="" class="lb-img">
+    </div>
+    <button class="lb-nav lb-next" id="lbNext" type="button" aria-label="下一张">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+    <button class="lb-close" id="lbClose" type="button" aria-label="关闭">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="lb-bar" id="lbBar"></div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div class="sheet" id="settingsSheet" hidden>
+    <div class="sheet-backdrop" data-close="settingsSheet"></div>
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <h2 data-i18n="settings">设置</h2>
+        <button class="sheet-close" data-close="settingsSheet" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="sheet-body">
+        <label class="field">
+          <span class="field-label" data-i18n="api_address">API 地址</span>
+          <input type="text" id="apiInput" placeholder="/api">
+          <span class="field-hint" data-i18n="api_address_hint">用于访问后端接口</span>
+        </label>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" data-close="settingsSheet" type="button" data-i18n="cancel">取消</button>
+        <button class="btn btn-primary" id="apiSave" type="button" data-i18n="save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 相册信息面板 -->
+  <div class="sheet" id="infoSheet" hidden>
+    <div class="sheet-backdrop" data-close="infoSheet"></div>
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <h2 data-i18n="album_info">相册信息</h2>
+        <button class="sheet-close" data-close="infoSheet" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="sheet-body">
+        <div class="info-row">
+          <span class="info-label" data-i18n="album_id">相册 ID</span>
+          <span class="info-value" id="infoAlbumId">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label" data-i18n="photo_count">照片张数</span>
+          <span class="info-value" id="infoPhotoCount">—</span>
+        </div>
+        <div class="info-row col">
+          <span class="info-label" data-i18n="share_link">分享链接</span>
+          <div class="copy-row">
+            <input type="text" id="infoShareLink" readonly>
+            <button class="btn btn-ghost sm" id="copyLinkBtn" type="button" data-i18n="copy">复制</button>
+          </div>
+        </div>
+        <div class="raf-block">
+          <h3 data-i18n="raf_jpg_title">RAF 与 JPG 的区别</h3>
+          <div class="raf-item">
+            <div class="raf-tag" data-i18n="raf_label">.RAF（数字底片）</div>
+            <p data-i18n="raf_desc"></p>
+          </div>
+          <div class="raf-item">
+            <div class="raf-tag jpg" data-i18n="jpg_label">.JPG（相机直出成品）</div>
+            <p data-i18n="jpg_desc"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/js/i18n.js?v=3"></script>
+  <script src="/static/js/api.js?v=3"></script>
+  <script src="/static/js/gallery.js?v=3"></script>
+</body>
+</html>
