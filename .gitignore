@@ -18,3 +18,6 @@ backend/.env
 
 # Office 临时文件
 ~$*
+
+# 文档生成脚本
+docs/gen_docs.py

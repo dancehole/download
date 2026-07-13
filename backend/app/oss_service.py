@@ -72,3 +72,14 @@ def delete_object(key: str):
     if not _bucket:
         return
     _bucket.delete_object(key)
+
+
+def delete_prefix(prefix: str) -> int:
+    """删除指定前缀下的所有 OSS 对象，返回删除数量。"""
+    if not _bucket or not prefix:
+        return 0
+    count = 0
+    for obj in oss2.ObjectIterator(_bucket, prefix=prefix):
+        _bucket.delete_object(obj.key)
+        count += 1
+    return count

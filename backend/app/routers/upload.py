@@ -47,7 +47,7 @@ async def upload_photos(
         return fail(400, "未选择文件")
 
     tag = (tag or "").strip() or None
-    tag_en = (tag_en or "").strip() or tag  # 缺省用中文标签
+    tag_en = (tag_en or "").strip() or tag
     base = os.path.join(STORAGE_DIR, ev["event_id"])
     orig_dir = os.path.join(base, "original")
     prev_dir = os.path.join(base, "preview")
@@ -55,8 +55,9 @@ async def upload_photos(
     for d in (orig_dir, prev_dir, raf_dir):
         os.makedirs(d, exist_ok=True)
 
+    preview_size = ev.get("preview_size", 640)
+    use_oss = bool(ev.get("use_oss", True)) and oss_service.is_enabled()
     results = []
-    use_oss = oss_service.is_enabled()
     for f in files:
         ext = os.path.splitext(f.filename)[1].lower()
         if ext not in JPG_EXT:
@@ -66,7 +67,7 @@ async def upload_photos(
         prev_uuid = uuid.uuid4().hex
         prev_path = os.path.join(prev_dir, f"{prev_uuid}.jpg")
         await _stream_to_disk(f, orig_path)
-        taken_at = await image_service.process_image(orig_path, prev_path)
+        taken_at = await image_service.process_image(orig_path, prev_path, preview_size)
 
         oss_original_key = None
         oss_preview_key = None
@@ -121,7 +122,7 @@ async def upload_raf(
 
     saved = 0
     matched = 0
-    use_oss = oss_service.is_enabled()
+    use_oss = bool(ev.get("use_oss", True)) and oss_service.is_enabled()
     for f in files:
         if not f.filename.lower().endswith(".raf"):
             continue

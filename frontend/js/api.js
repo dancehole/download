@@ -120,6 +120,12 @@
     regenShare: function (id) {
       return request("/events/" + encodeURIComponent(id) + "/share", { method: "POST" });
     },
+    deleteEvent: function (id) {
+      return request("/events/" + encodeURIComponent(id), { method: "DELETE" });
+    },
+    updateEventSettings: function (id, settings) {
+      return request("/events/" + encodeURIComponent(id) + "/settings", { method: "PUT", json: settings });
+    },
 
     // 上传
     uploadPhotos: function (eventId, files, tag, tagEn) {

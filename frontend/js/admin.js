@@ -114,6 +114,7 @@
           <button class="btn btn-primary sm" data-act="enter" data-id="${escapeHtml(ev.event_id)}">${I18N.t("enter_event")}</button>
           <button class="btn btn-ghost sm" data-act="copy" data-token="${escapeHtml(ev.share_token)}">${I18N.t("copy")}</button>
           <button class="btn btn-ghost sm" data-act="open" data-token="${escapeHtml(ev.share_token)}">${I18N.t("open_share")}</button>
+          <button class="btn btn-danger sm" data-act="delete" data-id="${escapeHtml(ev.event_id)}" data-name="${escapeHtml(ev.event_name)}">${I18N.t("delete_album")}</button>
         </div>
       </div>
     `).join("");
@@ -123,6 +124,7 @@
         if (act === "enter") openEvent(b.dataset.id);
         else if (act === "copy") copyShare(b.dataset.token);
         else if (act === "open") window.open(API.getAutoPrefix() + "/share/" + b.dataset.token, "_blank");
+        else if (act === "delete") deleteEvent(b.dataset.id, b.dataset.name);
       });
     });
   }
@@ -171,6 +173,8 @@
     $("detailCount").textContent = I18N.t("photos_count", { n: ev.photo_count });
     $("detailCreated").textContent = I18N.t("created_at") + ": " + (ev.created_at || "");
     $("shareLink").value = location.origin + API.getAutoPrefix() + "/share/" + ev.share_token;
+    $("previewSizeSelect").value = ev.preview_size || 640;
+    $("eventUseOss").checked = ev.use_oss !== false;
   }
 
   async function loadThumbs() {
@@ -215,6 +219,45 @@
       toast(I18N.t("regen_share") + " ✓", "ok");
     } catch (e) {
       toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  async function deleteEvent(eventId, eventName) {
+    // 二次确认：敏感操作
+    const name = eventName || (state.currentEvent && state.currentEvent.event_name) || eventId;
+    if (!confirm(I18N.t("delete_album_confirm1", { name: name }))) return;
+    if (!confirm(I18N.t("delete_album_confirm2"))) return;
+    try {
+      await API.deleteEvent(eventId);
+      toast(I18N.t("delete_album_success"), "ok");
+      state.currentEvent = null;
+      showView("viewEvents");
+      await loadEvents();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("delete_album_failed"), "err");
+    }
+  }
+
+  async function saveEventSettings() {
+    if (!state.currentEvent) return;
+    const btn = $("saveEventSettingsBtn");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = I18N.t("saving");
+    try {
+      const settings = {
+        preview_size: parseInt($("previewSizeSelect").value),
+        use_oss: $("eventUseOss").checked,
+      };
+      const data = await API.updateEventSettings(state.currentEvent.event_id, settings);
+      state.currentEvent = data;
+      renderDetail();
+      toast(I18N.t("save_success"), "ok");
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
     }
   }
 
@@ -384,6 +427,11 @@
     $("copyShare").addEventListener("click", () => copyShare(state.currentEvent.share_token));
     $("openShare").addEventListener("click", () => window.open(API.getAutoPrefix() + "/share/" + state.currentEvent.share_token, "_blank"));
     $("regenBtn").addEventListener("click", regenShare);
+    $("deleteAlbumBtn").addEventListener("click", () => {
+      if (!state.currentEvent) return;
+      deleteEvent(state.currentEvent.event_id, state.currentEvent.event_name);
+    });
+    $("saveEventSettingsBtn").addEventListener("click", saveEventSettings);
 
     setupDropzone("dropzoneJpg", "jpgInput", "jpgFiles", "jpg");
     setupDropzone("dropzoneRaf", "rafInput", "rafFiles", "raf");

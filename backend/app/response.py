@@ -25,6 +25,8 @@ def event_to_dict(ev: dict) -> dict:
         "photo_count": ev["photo_count"],
         "share_token": ev["share_token"],
         "share_url": f"/share/{ev['share_token']}",
+        "preview_size": ev.get("preview_size", 640),
+        "use_oss": bool(ev.get("use_oss", True)),
         "created_at": _dt(ev["created_at"]),
     }
 

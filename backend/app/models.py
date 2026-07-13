@@ -12,14 +12,15 @@ async def get_photographer_by_username(username: str):
 
 
 # ---------- 活动 ----------
-async def create_event(event_id: str, event_name: str, share_token: str, created_by: int):
+async def create_event(event_id: str, event_name: str, share_token: str, created_by: int,
+                       preview_size: int = 640, use_oss: bool = True):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO event (event_id, event_name, share_token, created_by) "
-                "VALUES (%s, %s, %s, %s)",
-                (event_id, event_name, share_token, created_by),
+                "INSERT INTO event (event_id, event_name, share_token, preview_size, use_oss, created_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (event_id, event_name, share_token, preview_size, 1 if use_oss else 0, created_by),
             )
             await conn.commit()
             return await get_event_by_id(event_id)
@@ -70,6 +71,28 @@ async def update_share_token(event_pk: int, token: str):
             await conn.commit()
 
 
+async def update_event_settings(event_pk: int, preview_size: int = None, use_oss: bool = None):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            parts = []
+            params = []
+            if preview_size is not None:
+                parts.append("preview_size=%s")
+                params.append(preview_size)
+            if use_oss is not None:
+                parts.append("use_oss=%s")
+                params.append(1 if use_oss else 0)
+            if not parts:
+                return
+            params.append(event_pk)
+            await cur.execute(
+                "UPDATE event SET " + ", ".join(parts) + " WHERE id=%s",
+                tuple(params),
+            )
+            await conn.commit()
+
+
 async def increment_photo_count(event_pk: int, n: int):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -78,6 +101,15 @@ async def increment_photo_count(event_pk: int, n: int):
                 "UPDATE event SET photo_count = photo_count + %s WHERE id=%s",
                 (n, event_pk),
             )
+            await conn.commit()
+
+
+async def delete_event(event_pk: int):
+    """删除活动记录（photo 表通过 ON DELETE CASCADE 级联删除）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM event WHERE id=%s", (event_pk,))
             await conn.commit()
 
 

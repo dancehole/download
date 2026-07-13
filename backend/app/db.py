@@ -58,6 +58,8 @@ async def init_db():
                     event_name VARCHAR(128) NOT NULL,
                     photo_count INT NOT NULL DEFAULT 0,
                     share_token VARCHAR(32) NOT NULL UNIQUE,
+                    preview_size INT NOT NULL DEFAULT 640,
+                    use_oss TINYINT(1) NOT NULL DEFAULT 1,
                     created_by INT NOT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_created_by (created_by),
@@ -83,6 +85,16 @@ async def init_db():
                         FOREIGN KEY (event_id) REFERENCES event(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
+            # 兼容已存在的数据库：若 event 缺 preview_size 和 use_oss 列则自动追加
+            for col_def in [
+                "ADD COLUMN preview_size INT NOT NULL DEFAULT 640 AFTER share_token",
+                "ADD COLUMN use_oss TINYINT(1) NOT NULL DEFAULT 1 AFTER preview_size",
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE event {col_def}")
+                except Exception:
+                    pass
+
             # 兼容已存在的数据库：若缺 tag_en 列则自动追加
             try:
                 await cur.execute(
