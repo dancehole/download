@@ -355,6 +355,7 @@
       $("ossEndpoint").value = cfg.endpoint || "";
       $("ossBucket").value = cfg.bucket || "";
       $("ossCustomDomain").value = cfg.custom_domain || "";
+      $("ossSignTtl").value = cfg.sign_url_ttl || 3600;
     } catch (e) {
       toast((e && e.msg) || I18N.t("load_failed"), "err");
     }
@@ -373,6 +374,7 @@
         endpoint: $("ossEndpoint").value.trim(),
         bucket: $("ossBucket").value.trim(),
         custom_domain: $("ossCustomDomain").value.trim(),
+        sign_url_ttl: parseInt($("ossSignTtl").value, 10) || 3600,
       };
       const result = await API.updateOssSettings(cfg);
       $("ossAccessKeySecret").value = result.access_key_secret_masked || "";

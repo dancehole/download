@@ -1,6 +1,7 @@
 import oss2
 from typing import Optional
 from io import BytesIO
+from urllib.parse import urlparse, urlunparse
 
 _bucket: Optional[oss2.Bucket] = None
 _config: dict = {
@@ -10,6 +11,7 @@ _config: dict = {
     "endpoint": "",
     "bucket": "",
     "custom_domain": "",
+    "sign_url_ttl": 3600,
 }
 
 
@@ -43,6 +45,7 @@ def get_config() -> dict:
         "endpoint": _config.get("endpoint", ""),
         "bucket": _config.get("bucket", ""),
         "custom_domain": _config.get("custom_domain", ""),
+        "sign_url_ttl": int(_config.get("sign_url_ttl", 3600)),
     }
 
 
@@ -66,6 +69,27 @@ def get_url(key: str) -> str:
     if _config.get("endpoint") and _config.get("bucket"):
         return f"https://{_config['bucket']}.{_config['endpoint']}/{key}"
     return key
+
+
+def sign_url(key: str, expires: int = None) -> str:
+    """生成带有效期的 OSS 签名 URL（要求 Bucket 权限为 private）。
+
+    签名 URL 在 expires 秒后自动失效，过期 / 伪造 / 被盗链的链接
+    会被 OSS 拒绝（403）。若配置了自定义域名（CDN），会将签名 URL
+    的默认 host 替换为自定义域名——OSS V1 签名不包含 host，因此
+    CDN 透传回源时签名依然有效。
+    """
+    if not _bucket or not key:
+        return ""
+    if expires is None:
+        expires = int(_config.get("sign_url_ttl", 3600))
+    url = _bucket.sign_url("GET", key, expires)
+    custom_domain = (_config.get("custom_domain") or "").strip()
+    if custom_domain:
+        custom_domain = custom_domain.replace("https://", "").replace("http://", "").rstrip("/")
+        parsed = urlparse(url)
+        url = urlunparse(parsed._replace(netloc=custom_domain, scheme="https"))
+    return url
 
 
 def delete_object(key: str):

@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
         ("oss_endpoint", "endpoint"),
         ("oss_bucket", "bucket"),
         ("oss_custom_domain", "custom_domain"),
+        ("oss_sign_url_ttl", "sign_url_ttl"),
     ]:
         v = await get_setting(key)
         if v is not None:

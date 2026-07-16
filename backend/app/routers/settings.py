@@ -14,12 +14,13 @@ class OssConfig(BaseModel):
     endpoint: str = ""
     bucket: str = ""
     custom_domain: str = ""
+    sign_url_ttl: int = 3600
 
 
 @router.get("/oss")
 async def get_oss_settings(user=Depends(current_photographer)):
     keys = ["oss_enabled", "oss_access_key_id", "oss_access_key_secret",
-            "oss_endpoint", "oss_bucket", "oss_custom_domain"]
+            "oss_endpoint", "oss_bucket", "oss_custom_domain", "oss_sign_url_ttl"]
     vals = {}
     for k in keys:
         v = await get_setting(k)
@@ -33,6 +34,7 @@ async def get_oss_settings(user=Depends(current_photographer)):
             "endpoint": vals["oss_endpoint"],
             "bucket": vals["oss_bucket"],
             "custom_domain": vals["oss_custom_domain"],
+            "sign_url_ttl": int(vals["oss_sign_url_ttl"]) if vals["oss_sign_url_ttl"] else 3600,
         }
     }
 
@@ -42,12 +44,15 @@ async def update_oss_settings(cfg: OssConfig, user=Depends(current_photographer)
     current_secret = await get_setting("oss_access_key_secret") or ""
     new_secret = current_secret if cfg.access_key_secret == "" or cfg.access_key_secret == "****" else cfg.access_key_secret
 
+    sign_ttl = max(60, min(int(cfg.sign_url_ttl or 3600), 86400))
+
     await set_setting("oss_enabled", "1" if cfg.enabled else "0")
     await set_setting("oss_access_key_id", cfg.access_key_id)
     await set_setting("oss_access_key_secret", new_secret)
     await set_setting("oss_endpoint", cfg.endpoint)
     await set_setting("oss_bucket", cfg.bucket)
     await set_setting("oss_custom_domain", cfg.custom_domain)
+    await set_setting("oss_sign_url_ttl", str(sign_ttl))
 
     config = {
         "enabled": cfg.enabled,
@@ -56,6 +61,7 @@ async def update_oss_settings(cfg: OssConfig, user=Depends(current_photographer)
         "endpoint": cfg.endpoint,
         "bucket": cfg.bucket,
         "custom_domain": cfg.custom_domain,
+        "sign_url_ttl": sign_ttl,
     }
     oss_service.init_oss(config)
 
@@ -68,6 +74,7 @@ async def update_oss_settings(cfg: OssConfig, user=Depends(current_photographer)
             "endpoint": cfg.endpoint,
             "bucket": cfg.bucket,
             "custom_domain": cfg.custom_domain,
+            "sign_url_ttl": sign_ttl,
         }
     }
 

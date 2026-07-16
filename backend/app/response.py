@@ -39,9 +39,9 @@ def photo_to_dict(p: dict, token: str) -> dict:
     local_original = f"{base}/original"
     local_raf = f"{base}/raf"
 
-    oss_preview = oss_service.get_url(p["oss_preview_key"]) if use_oss and p.get("oss_preview_key") else None
-    oss_original = oss_service.get_url(p["oss_original_key"]) if use_oss and p.get("oss_original_key") else None
-    oss_raf = oss_service.get_url(p["oss_raf_key"]) if use_oss and p.get("oss_raf_key") else None
+    oss_preview = oss_service.sign_url(p["oss_preview_key"]) if use_oss and p.get("oss_preview_key") else None
+    oss_original = oss_service.sign_url(p["oss_original_key"]) if use_oss and p.get("oss_original_key") else None
+    oss_raf = oss_service.sign_url(p["oss_raf_key"]) if use_oss and p.get("oss_raf_key") else None
 
     return {
         "photo_id": p["id"],
