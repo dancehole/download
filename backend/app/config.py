@@ -38,7 +38,7 @@ DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 # CORS
 CORS_ORIGINS = ["*"]
 
-# 应用路径前缀（用于子目录部署，如 /activity_image_list）
+# 应用路径前缀（用于子目录部署，如 /download）
 # 可通过环境变量 APP_PREFIX 设置，默认空字符串（根路径部署）
 def _normalize_prefix(p):
     if not p:

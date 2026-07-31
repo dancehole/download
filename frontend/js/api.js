@@ -5,7 +5,7 @@
   const TOKEN_KEY = "admin_token";
 
   // 自动从当前 URL 推断路径前缀
-  // 例如 URL 是 /activity_image_list/admin → 前缀是 /activity_image_list
+  // 例如 URL 是 /download/admin → 前缀是 /download
   // URL 是 /admin → 前缀是 ""
   function _detectPrefix() {
     const path = location.pathname;
