@@ -89,6 +89,11 @@ def sign_url(key: str, expires: int = None) -> str:
         custom_domain = custom_domain.replace("https://", "").replace("http://", "").rstrip("/")
         parsed = urlparse(url)
         url = urlunparse(parsed._replace(netloc=custom_domain, scheme="https"))
+    else:
+        # 默认域名强制 https，避免 https 页面混合内容被浏览器拦截
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            url = urlunparse(parsed._replace(scheme="https"))
     return url
 
 
@@ -113,6 +118,11 @@ def sign_download_url(key: str, filename: str, expires: int = None) -> str:
         custom_domain = custom_domain.replace("https://", "").replace("http://", "").rstrip("/")
         parsed = urlparse(url)
         url = urlunparse(parsed._replace(netloc=custom_domain, scheme="https"))
+    else:
+        # 默认域名强制 https，避免 https 页面混合内容被浏览器拦截
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            url = urlunparse(parsed._replace(scheme="https"))
     return url
 
 

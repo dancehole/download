@@ -205,7 +205,7 @@ activity-imageList/
 
 ### 历史照片回填 OSS
 
-系统现有照片若在启用 OSS 前上传，数据库中缺少 `oss_preview_key` / `oss_original_key`，仍需通过后端服务器提供。后续可编写回填脚本，将本地存储的预览图和原图批量上传至 OSS 并更新数据库。
+系统现有照片若在启用 OSS 前上传，数据库中缺少 `oss_preview_key` / `oss_original_key`，仍需通过后端服务器提供。已提供回填脚本 `backend/backfill_oss.py`（`venv/bin/python backfill_oss.py`），可将本地存储的预览图/原图/RAF 与共享文件批量上传至 OSS 并补齐数据库 key；也适用于更换 OSS bucket 后重新上传同 key 对象。
 
 ## License
 
