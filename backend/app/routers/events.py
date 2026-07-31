@@ -105,7 +105,11 @@ async def delete_event(event_id: str, user: dict = Depends(current_photographer)
     # 1. 删除 OSS 远程对象（按前缀整目录清理，确保无残留）
     oss_deleted = 0
     if oss_service.is_enabled():
-        oss_deleted = oss_service.delete_prefix(f"{event_folder}/")
+        try:
+            oss_deleted = oss_service.delete_prefix(f"{event_folder}/")
+        except Exception:
+            # OSS 不可用（如 Bucket 不存在/网络异常）时跳过远程清理，不阻塞本地删除
+            oss_deleted = -1
 
     # 2. 删除本地存储目录
     local_dir = os.path.join(STORAGE_DIR, event_folder)

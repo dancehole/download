@@ -92,6 +92,30 @@ def sign_url(key: str, expires: int = None) -> str:
     return url
 
 
+def sign_download_url(key: str, filename: str, expires: int = None) -> str:
+    """生成带附件下载语义的签名 URL（response-content-disposition）。
+
+    用于共享文件下载：OSS 返回签名 URL 时附带 attachment 头，
+    浏览器保存时使用原始文件名（含中文，通过 filename* 传递）。
+    """
+    if not _bucket or not key:
+        return ""
+    from urllib.parse import quote
+    if expires is None:
+        expires = int(_config.get("sign_url_ttl", 3600))
+    filename = quote(filename)
+    params = {
+        "response-content-disposition": f"attachment; filename*=UTF-8''{filename}"
+    }
+    url = _bucket.sign_url("GET", key, expires, params=params)
+    custom_domain = (_config.get("custom_domain") or "").strip()
+    if custom_domain:
+        custom_domain = custom_domain.replace("https://", "").replace("http://", "").rstrip("/")
+        parsed = urlparse(url)
+        url = urlunparse(parsed._replace(netloc=custom_domain, scheme="https"))
+    return url
+
+
 def delete_object(key: str):
     if not _bucket:
         return

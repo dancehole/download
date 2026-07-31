@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR, APP_PREFIX
 from .db import init_db, close_pool
-from .routers import auth, events, upload, share, settings as settings_router
+from .routers import auth, events, upload, share, files as files_router, settings as settings_router
 from .response import ok
 from . import oss_service
 from .models import get_setting
@@ -57,6 +57,7 @@ app.include_router(auth.router, prefix=p + "/api")
 app.include_router(events.router, prefix=p + "/api")
 app.include_router(upload.router, prefix=p + "/api")
 app.include_router(share.router, prefix=p + "/api")
+app.include_router(files_router.router, prefix=p + "/api")
 app.include_router(settings_router.router, prefix=p)
 
 
@@ -93,6 +94,12 @@ async def admin_page():
 @app.get(p + "/share/{token}")
 async def share_page(token: str):
     return _html_response(os.path.join(FRONTEND_DIR, "gallery.html"))
+
+
+@app.get(p + "/share/files/{token}")
+async def file_share_page(token: str):
+    """共享文件下载页（需与 API 路由 /api/share/files/{token} 区分）。"""
+    return _html_response(os.path.join(FRONTEND_DIR, "file.html"))
 
 
 @app.get(p + "/")

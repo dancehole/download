@@ -507,3 +507,13 @@ button { font-family: inherit; cursor: pointer; }
   font-size: 14px;
 }
 .global-loading .lb-spinner { position: static; margin: 0 auto 14px; }
+
+/* ===== 页脚（ICP 备案） ===== */
+.site-footer {
+  text-align: center;
+  padding: 16px 16px 26px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.site-footer a { color: var(--text-faint); text-decoration: none; }
+.site-footer a:hover { color: var(--accent); }

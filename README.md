@@ -11,6 +11,7 @@
 - ⚙️ **相册设置**：每相册独立配置缩略图尺寸（480px / 640px / 800px）、是否使用 OSS 存储
 - ☁️ **OSS 集成**：阿里云 OSS 存储 + CDN 加速，可按相册独立开关
 - 🌐 **多语言**：中英文一键切换
+- 📄 **共享文件**（下载中心合并）：新建共享文件/共享相册二选一，单文件分享链接，支持过期时间（1小时~30天/永不过期），文件同样支持 OSS 存储与签名 URL 防盗链
 
 ### 前端展示页
 - 📸 **照片瀑布流**：响应式 Grid 布局，手机 2 列 / 平板 3 列 / PC 4 列
@@ -71,7 +72,8 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 | 页面 | 地址 |
 |------|------|
 | 摄影师后台 | http://127.0.0.1:8765/admin |
-| 分享页 | http://127.0.0.1:8765/share/{token} |
+| 相册分享页 | http://127.0.0.1:8765/share/{token} |
+| 文件分享页 | http://127.0.0.1:8765/share/files/{token} |
 | 健康检查 | http://127.0.0.1:8765/api/health |
 
 默认账号：`admin` / `admin123`
@@ -87,6 +89,7 @@ activity-imageList/
 │   │   │   ├── events.py  # 活动 CRUD
 │   │   │   ├── upload.py  # 照片上传
 │   │   │   ├── share.py   # 分享页接口
+│   │   │   ├── files.py   # 共享文件（下载中心合并）
 │   │   │   └── settings.py # OSS 等设置
 │   │   ├── auth.py        # JWT 认证中间件
 │   │   ├── config.py      # 配置项
@@ -97,6 +100,8 @@ activity-imageList/
 │   │   ├── response.py    # 统一响应格式
 │   │   └── main.py        # FastAPI 入口
 │   ├── storage/           # 本地照片存储（运行时生成）
+│   │   └── files/         # 共享文件存储（运行时生成）
+│   ├── migrate_download_center.py  # 下载中心历史数据迁移脚本（一次性）
 │   ├── test_assets/       # 测试用照片
 │   ├── requirements.txt   # Python 依赖
 │   ├── install.bat        # Windows 安装脚本
@@ -112,7 +117,8 @@ activity-imageList/
 │   │   ├── api.js         # API 封装
 │   │   └── i18n.js        # 国际化
 │   ├── admin.html         # 摄影师后台
-│   └── gallery.html       # 展示页
+│   ├── gallery.html       # 展示页（相册）
+│   └── file.html          # 展示页（共享文件下载）
 ├── .gitignore
 └── README.md
 ```
@@ -142,9 +148,64 @@ activity-imageList/
 
 > 以上为估算值，实际流量因图片内容而异。OSS 流量限制 20GB/天时，640px 约可支持 280 人次/天的完整浏览。
 
+## 共享文件（下载中心合并）
+
+本系统已合并原「下载中心」（download-center）的文件上传/分享功能，后台可二选一新建 **共享相册** 或 **共享文件**：
+
+1. 后台点击「新建」，选择「新建共享文件」
+2. 选择文件、设置过期时间（1 小时 ~ 30 天 / 永不过期），点击上传
+3. 上传成功后自动复制分享链接，链接形式：`/share/files/{token}`
+4. 文件列表支持：复制链接、打开分享页、重新生成链接（旧链接立即失效）、删除
+
+要点：
+- 启用 OSS 后，共享文件自动镜像到 OSS（`files/{file_id}` 前缀），下载时返回带有效期的签名 URL（防盗链 + 自动失效）
+- 迁移自旧 download-center 的文件（`oss_key` 为空）走本地直传下载，可后续回填 OSS
+- OSS 不可用（如 Bucket 缺失）时自动降级为本地存储，不阻塞上传/下载
+- 单文件上限默认 500MB（`FILE_MAX_UPLOAD_SIZE_MB`，需同时调整 nginx `client_max_body_size`）
+
+历史数据迁移：`backend/migrate_download_center.py`（一次性脚本，读取旧 SQLite 数据库并复制文件）。
+
 ## 部署
 
 详见 `docs/部署文档.doc` 和 `docs/使用说明文档.doc`。
+
+## TODO / 后续计划
+
+### CDN 加速与回源配置
+
+当前 OSS 直接对外提供签名 URL，可进一步通过 CDN 加速提升访问速度并节省 OSS 外网流量费用。
+
+#### 推荐架构
+
+```
+用户请求 → CDN 边缘节点（https://cdn.dancehole.cn）
+              ↕ 命中缓存则直接响应
+              ↕ 未命中则私有回源
+           阿里云 OSS 私有 Bucket
+```
+
+#### 配置步骤（阿里云）
+
+1. **开通 CDN 服务**（阿里云 CDN / 全站加速 DCDN）
+2. **添加加速域名**，如 `cdn.dancehole.cn`，源站类型选择「OSS 域名」
+3. **OSS 私有 Bucket 回源**：开启「私有 Bucket 回源」，CDN 用阿里云内网回源获取文件，不消耗 OSS 外网流量
+4. **HTTPS 配置**：在 CDN 上绑定 SSL 证书（Let's Encrypt），启用 HTTPS
+5. **CNAME**：将 `cdn.dancehole.cn` CNAME 指向 CDN 加速域名
+6. **更新系统设置**：在后台「OSS 存储设置」中将「自定义 CDN 域名」设为 `cdn.dancehole.cn`
+
+#### 成本与收益
+
+| 项目 | 纯 OSS 直连 | OSS + CDN |
+|------|------------|-----------|
+| 流量费用 | OSS 外网流量 0.5元/GB | CDN 流量 0.2~0.3元/GB |
+| 回源流量 | — | 内网回源免费（同地域） |
+| 延迟 | 50-200ms | 10-50ms（缓存命中） |
+| HTTPS | 需额外配置 | CDN 统一管理 |
+| DDoS 防护 | 需额外购买 | CDN 原生防护 |
+
+### 历史照片回填 OSS
+
+系统现有照片若在启用 OSS 前上传，数据库中缺少 `oss_preview_key` / `oss_original_key`，仍需通过后端服务器提供。后续可编写回填脚本，将本地存储的预览图和原图批量上传至 OSS 并更新数据库。
 
 ## License
 

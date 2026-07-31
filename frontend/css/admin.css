@@ -400,3 +400,152 @@ input { font-family: inherit; }
 @media (max-width: 560px) {
   .danger-zone { flex-direction: column; align-items: stretch; }
 }
+
+/* ===== 导航高亮 ===== */
+.crumb.active { background: var(--accent-soft); color: var(--accent); }
+
+/* ===== 区块标题 ===== */
+.section-head {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 16px;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-size: 20px; font-weight: 600; margin: 0;
+}
+
+/* ===== 共享文件：上传区 ===== */
+.file-upload-row {
+  display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;
+}
+.file-upload-row .file-pick { flex: 1; min-width: 220px; }
+.file-upload-row .field { flex: 0 0 auto; }
+.file-upload-row input[type="file"] {
+  width: 100%; padding: 9px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text); font-size: 13px;
+}
+.file-upload-row input[type="file"]::file-selector-button {
+  padding: 5px 12px; border: none; border-radius: 6px;
+  background: var(--accent); color: #fff; cursor: pointer; margin-right: 10px;
+  font-size: 12px;
+}
+.file-picked { margin-top: 12px; font-size: 13px; color: var(--text-dim); }
+.file-picked .fitem {
+  background: var(--accent-soft); border: 1px solid rgba(184,137,63,.25);
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===== 共享文件：列表 ===== */
+.files-section { margin-top: 26px; }
+.files-section h3 { font-family: var(--font-display); font-size: 17px; font-weight: 600; margin: 0 0 14px; }
+.file-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+}
+.file-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.file-table th {
+  text-align: left; padding: 12px 16px;
+  font-size: 12px; color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600; white-space: nowrap;
+}
+.file-table td {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  font-size: 13px; vertical-align: middle;
+}
+.file-table tbody tr:last-child td { border-bottom: none; }
+.file-table tbody tr:hover { background: var(--surface-2); }
+.file-table .fname {
+  max-width: 280px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600;
+}
+.file-table .fmeta { color: var(--text-dim); white-space: nowrap; }
+.file-table tr.row-expired .fname,
+.file-table tr.row-expired .fmeta { color: var(--text-faint); }
+.status-valid { color: var(--ok); font-size: 12px; }
+.status-expired { color: var(--danger); font-size: 12px; font-weight: 600; }
+.status-forever { color: var(--text-faint); font-size: 12px; }
+.file-table .fops { white-space: nowrap; }
+.action-btn {
+  padding: 5px 11px; border: 1px solid transparent; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s;
+  margin-right: 4px;
+}
+.copy-btn { background: rgba(59,130,246,.1); color: #2563eb; }
+.copy-btn:hover { background: rgba(59,130,246,.2); }
+.open-btn { background: var(--surface-2); color: var(--text-dim); border-color: var(--border); }
+.open-btn:hover { color: var(--text); }
+.regen-btn { background: var(--accent-soft); color: var(--accent); }
+.regen-btn:hover { background: rgba(184,137,63,.2); }
+.del-btn { background: rgba(192,80,77,.08); color: var(--danger); }
+.del-btn:hover { background: rgba(192,80,77,.18); }
+
+/* ===== 弹窗 ===== */
+.modal-mask {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(3px);
+}
+.modal {
+  width: 100%; max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px 0;
+}
+.modal-head h2 { font-family: var(--font-display); font-size: 19px; font-weight: 600; margin: 0; }
+.modal-close {
+  background: var(--surface-2); border: none; border-radius: 50%;
+  width: 30px; height: 30px; font-size: 16px; color: var(--text-dim);
+  cursor: pointer; line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 18px 22px 22px; }
+.create-option {
+  width: 100%;
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: left;
+}
+.create-option:last-child { margin-bottom: 0; }
+.create-option:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+.create-option-icon { font-size: 26px; }
+.create-option-text { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.create-option-text strong { font-size: 15px; color: var(--text); }
+.create-option-text small { font-size: 12px; color: var(--text-faint); }
+.create-option-arrow { color: var(--text-faint); font-size: 20px; }
+
+/* ===== 页脚（ICP 备案） ===== */
+.site-footer {
+  text-align: center;
+  padding: 18px 16px 26px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.site-footer a { color: var(--text-faint); text-decoration: none; }
+.site-footer a:hover { color: var(--accent); }

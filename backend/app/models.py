@@ -245,6 +245,87 @@ async def get_tags(event_pk: int):
             return await cur.fetchall()
 
 
+# ---------- 共享文件（下载中心合并） ----------
+async def create_share_file(file_id: str, original_filename: str, file_size: int,
+                            mime_type: str, storage_path: str, oss_key,
+                            share_token: str, created_by: int, expires_at):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO share_file (file_id, original_filename, file_size, mime_type, "
+                "storage_path, oss_key, share_token, created_by, expires_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (file_id, original_filename, file_size, mime_type,
+                 storage_path, oss_key, share_token, created_by, expires_at),
+            )
+            await conn.commit()
+            return file_id
+
+
+async def get_share_file_by_id(file_id: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT * FROM share_file WHERE file_id=%s", (file_id,))
+            return await cur.fetchone()
+
+
+async def get_share_file_by_pk(pk: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT * FROM share_file WHERE id=%s", (pk,))
+            return await cur.fetchone()
+
+
+async def get_share_file_by_token(token: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT * FROM share_file WHERE share_token=%s", (token,))
+            return await cur.fetchone()
+
+
+async def list_share_files_by_user(created_by: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT * FROM share_file WHERE created_by=%s ORDER BY created_at DESC",
+                (created_by,),
+            )
+            return await cur.fetchall()
+
+
+async def update_share_file_token(pk: int, token: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE share_file SET share_token=%s WHERE id=%s", (token, pk)
+            )
+            await conn.commit()
+
+
+async def increment_share_file_download(pk: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE share_file SET download_count = download_count + 1 WHERE id=%s", (pk,)
+            )
+            await conn.commit()
+
+
+async def delete_share_file(pk: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM share_file WHERE id=%s", (pk,))
+            await conn.commit()
+
+
 # ---------- 设置 ----------
 async def get_setting(key: str):
     pool = await get_pool()

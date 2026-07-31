@@ -148,6 +148,24 @@
     },
     testOss: function () { return request("/admin/settings/oss/test", { method: "POST" }); },
 
+    // 共享文件（下载中心合并）
+    listFiles: function () { return request("/files"); },
+    uploadFile: function (file, expireHours) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("expire", expireHours || 0);
+      return request("/files/upload", { method: "POST", body: fd });
+    },
+    regenFileShare: function (fileId) {
+      return request("/files/" + encodeURIComponent(fileId) + "/share", { method: "POST" });
+    },
+    deleteFile: function (fileId) {
+      return request("/files/" + encodeURIComponent(fileId), { method: "DELETE" });
+    },
+    fileInfo: function (token) {
+      return request("/share/files/" + encodeURIComponent(token));
+    },
+
     // 公开访问
     shareInfo: function (token) { return request("/share/" + encodeURIComponent(token)); },
     sharePhotos: function (token, opts) {

@@ -75,10 +75,15 @@ async def upload_photos(
             event_folder = ev["event_id"]
             oss_original_key = f"{event_folder}/original/{safe}"
             oss_preview_key = f"{event_folder}/preview/{prev_uuid}.jpg"
-            with open(orig_path, "rb") as fp:
-                oss_service.upload_fileobj(fp, oss_original_key, "image/jpeg")
-            with open(prev_path, "rb") as fp:
-                oss_service.upload_fileobj(fp, oss_preview_key, "image/jpeg")
+            try:
+                with open(orig_path, "rb") as fp:
+                    oss_service.upload_fileobj(fp, oss_original_key, "image/jpeg")
+                with open(prev_path, "rb") as fp:
+                    oss_service.upload_fileobj(fp, oss_preview_key, "image/jpeg")
+            except Exception:
+                # OSS 不可用（如 Bucket 缺失/网络异常）时降级为本地存储
+                oss_original_key = None
+                oss_preview_key = None
 
         # 若 raf 目录已存在同名 RAF，则关联
         raf_path = None
@@ -134,8 +139,12 @@ async def upload_raf(
         oss_raf_key = None
         if use_oss:
             oss_raf_key = f"{ev['event_id']}/raf/{base_name}.RAF"
-            with open(dest, "rb") as fp:
-                oss_service.upload_fileobj(fp, oss_raf_key, "application/octet-stream")
+            try:
+                with open(dest, "rb") as fp:
+                    oss_service.upload_fileobj(fp, oss_raf_key, "application/octet-stream")
+            except Exception:
+                # OSS 不可用时降级为本地存储
+                oss_raf_key = None
 
         n = await models.link_raf_by_filename_base(ev["id"], base_name, dest, oss_raf_key)
         matched += n

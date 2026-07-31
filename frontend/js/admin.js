@@ -6,8 +6,10 @@
   const state = {
     events: [],
     currentEvent: null,
+    files: [],
     jpgFiles: [],
     rafFiles: [],
+    pickedFile: null,
   };
 
   function toast(msg, type) {
@@ -16,7 +18,7 @@
     el.className = "toast" + (type ? " " + type : "");
     el.hidden = false;
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => { el.hidden = true; }, 2000);
+    toast._t = setTimeout(() => { el.hidden = true; }, 2500);
   }
 
   function applyI18n() {
@@ -29,6 +31,10 @@
     });
     document.querySelectorAll(".lang-opt").forEach((o) => {
       o.classList.toggle("active", o.dataset.lang === I18N.getLang());
+    });
+    // 下拉框内的 option 文案
+    document.querySelectorAll("select option[data-i18n]").forEach((o) => {
+      o.textContent = I18N.t(o.getAttribute("data-i18n"));
     });
   }
 
@@ -62,6 +68,9 @@
     $("viewEvents").hidden = id !== "viewEvents";
     $("viewDetail").hidden = id !== "viewDetail";
     $("viewSettings").hidden = id !== "viewSettings";
+    $("viewFiles").hidden = id !== "viewFiles";
+    $("navEvents").classList.toggle("active", id === "viewEvents" || id === "viewDetail");
+    $("navFiles").classList.toggle("active", id === "viewFiles");
   }
 
   async function doLogin() {
@@ -82,6 +91,51 @@
     } finally {
       $("loginSubmit").disabled = false;
     }
+  }
+
+  // ===== 新建弹窗 =====
+  function openCreateModal() {
+    $("createModal").hidden = false;
+  }
+  function closeCreateModal() {
+    $("createModal").hidden = true;
+  }
+  function openAlbumNameModal() {
+    closeCreateModal();
+    $("albumNameModal").hidden = false;
+    setTimeout(() => $("albumNameInput").focus(), 50);
+  }
+  function closeAlbumNameModal() {
+    $("albumNameModal").hidden = true;
+  }
+
+  async function confirmCreateAlbum() {
+    const name = $("albumNameInput").value.trim();
+    if (!name) { toast(I18N.t("event_name_required"), "err"); return; }
+    const btn = $("albumNameConfirm");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = I18N.t("saving");
+    try {
+      await API.createEvent(name);
+      $("albumNameInput").value = "";
+      closeAlbumNameModal();
+      toast(I18N.t("create_event") + " ✓", "ok");
+      showView("viewEvents");
+      await loadEvents();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  function chooseCreateFile() {
+    closeCreateModal();
+    showView("viewFiles");
+    loadFiles();
+    setTimeout(() => $("fileInput").click(), 150);
   }
 
   // ===== 活动列表 =====
@@ -129,26 +183,136 @@
     });
   }
 
-  async function createEvent() {
-    const name = $("createName").value.trim();
-    if (!name) { toast(I18N.t("event_name"), "err"); return; }
-    $("createBtn").disabled = true;
-    try {
-      await API.createEvent(name);
-      $("createName").value = "";
-      toast(I18N.t("create_event") + " ✓", "ok");
-      await loadEvents();
-    } catch (e) {
-      toast((e && e.msg) || I18N.t("load_failed"), "err");
-    } finally {
-      $("createBtn").disabled = false;
-    }
-  }
-
   async function enterById() {
     const id = $("enterId").value.trim();
     if (!id) return;
     openEvent(id);
+  }
+
+  // ===== 共享文件 =====
+  async function loadFiles() {
+    try {
+      state.files = await API.listFiles();
+      renderFiles();
+    } catch (e) {
+      if (e && (e.status === 401)) { API.clearToken(); showLogin(); return; }
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  function renderFiles() {
+    const tbody = $("fileTableBody");
+    const empty = $("fileEmpty");
+    $("fileCountChip").textContent = state.files.length;
+    const rows = state.files.map((f) => {
+      const expired = !!f.expired;
+      const expHtml = expired
+        ? `<span class="status-expired">${I18N.t("expired")}</span>`
+        : (f.expires_at_text ? `<span class="status-valid">${escapeHtml(f.expires_at_text)}</span>` : `<span class="status-forever">${I18N.t("expire_never")}</span>`);
+      return `
+        <tr data-id="${escapeHtml(f.file_id)}" class="${expired ? "row-expired" : ""}">
+          <td class="fname" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</td>
+          <td class="fmeta">${escapeHtml(f.file_size_text)}</td>
+          <td class="fmeta">${escapeHtml(f.created_at || "")}</td>
+          <td class="fmeta">${expHtml}</td>
+          <td class="fmeta">${f.download_count}</td>
+          <td class="fops">
+            <button class="action-btn copy-btn" data-act="copy" data-token="${escapeHtml(f.share_token)}">${I18N.t("copy_link")}</button>
+            <button class="action-btn open-btn" data-act="open" data-token="${escapeHtml(f.share_token)}">${I18N.t("open_share")}</button>
+            <button class="action-btn regen-btn" data-act="regen" data-id="${escapeHtml(f.file_id)}">${I18N.t("regen_share")}</button>
+            <button class="action-btn del-btn" data-act="delete" data-id="${escapeHtml(f.file_id)}">${I18N.t("delete")}</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+    tbody.innerHTML = rows;
+    empty.hidden = state.files.length > 0;
+    tbody.querySelectorAll("[data-act]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const act = b.dataset.act;
+        if (act === "copy") copyFileLink(b.dataset.token);
+        else if (act === "open") window.open(API.getAutoPrefix() + "/share/files/" + b.dataset.token, "_blank");
+        else if (act === "regen") regenFileLink(b.dataset.id);
+        else if (act === "delete") deleteSharedFile(b.dataset.id);
+      });
+    });
+  }
+
+  function copyFileLink(token) {
+    const link = location.origin + API.getAutoPrefix() + "/share/files/" + token;
+    copyText(link);
+  }
+
+  function copyText(text) {
+    const done = () => toast(I18N.t("copied"), "ok");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+  function fallbackCopy(text, done) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) { toast(I18N.t("copy_failed"), "err"); }
+    document.body.removeChild(ta);
+  }
+
+  async function regenFileLink(fileId) {
+    if (!confirm(I18N.t("regen_share_confirm"))) return;
+    try {
+      const data = await API.regenFileShare(fileId);
+      copyText(location.origin + API.getAutoPrefix() + "/share/files/" + data.share_token);
+      await loadFiles();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  async function deleteSharedFile(fileId) {
+    if (!confirm(I18N.t("delete_file_confirm"))) return;
+    try {
+      await API.deleteFile(fileId);
+      toast(I18N.t("delete_file_success"), "ok");
+      await loadFiles();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("delete_file_failed"), "err");
+    }
+  }
+
+  function pickFile(file) {
+    state.pickedFile = file;
+    const el = $("filePicked");
+    if (!file) { el.innerHTML = ""; $("fileUploadBtn").disabled = true; return; }
+    el.innerHTML = `<div class="fitem">📄 ${escapeHtml(file.name)} <span style="color:#bbb">(${(file.size / 1024 / 1024).toFixed(1)}MB)</span></div>`;
+    $("fileUploadBtn").disabled = false;
+  }
+
+  async function uploadSharedFile() {
+    if (!state.pickedFile) return;
+    const btn = $("fileUploadBtn");
+    const expire = parseInt($("fileExpireSelect").value, 10) || 0;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = I18N.t("uploading");
+    try {
+      const data = await API.uploadFile(state.pickedFile, expire);
+      const link = location.origin + API.getAutoPrefix() + data.share_url;
+      copyText(link);
+      toast(I18N.t("upload_file_success") + " ✓", "ok");
+      state.pickedFile = null;
+      $("fileInput").value = "";
+      $("filePicked").innerHTML = "";
+      btn.disabled = true;
+      await loadFiles();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("upload_file_failed"), "err");
+    } finally {
+      btn.disabled = state.pickedFile !== null;
+      btn.textContent = orig;
+    }
   }
 
   // ===== 活动详情 =====
@@ -198,15 +362,7 @@
 
   async function copyShare(token) {
     const link = location.origin + API.getAutoPrefix() + "/share/" + token;
-    try {
-      await navigator.clipboard.writeText(link);
-      toast(I18N.t("copied"), "ok");
-    } catch (e) {
-      $("shareLink").value = link;
-      $("shareLink").select();
-      document.execCommand("copy");
-      toast(I18N.t("copied"), "ok");
-    }
+    copyText(link);
   }
 
   async function regenShare() {
@@ -261,7 +417,7 @@
     }
   }
 
-  // ===== 上传 =====
+  // ===== 上传照片 =====
   function setupDropzone(zoneId, inputId, listId, kind) {
     const zone = $(zoneId);
     const input = $(inputId);
@@ -280,11 +436,11 @@
   function setFiles(fileList, kind, listEl) {
     const arr = Array.from(fileList);
     if (kind === "jpg") {
-      state.jpgFiles = arr.filter((f) => /\.jpe?g$/i.test(f.name));
+      state.jpgFiles = arr.filter((f) => /\\.jpe?g$/i.test(f.name));
       renderFileList(listEl, state.jpgFiles);
       $("uploadBtn").disabled = state.jpgFiles.length === 0;
     } else {
-      state.rafFiles = arr.filter((f) => /\.raf$/i.test(f.name));
+      state.rafFiles = arr.filter((f) => /\\.raf$/i.test(f.name));
       renderFileList(listEl, state.rafFiles);
       $("uploadRafBtn").disabled = state.rafFiles.length === 0;
     }
@@ -414,12 +570,21 @@
     $("loginPass").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
     $("logoutBtn").addEventListener("click", () => { API.clearToken(); showLogin(); });
 
-    $("createBtn").addEventListener("click", createEvent);
-    $("createName").addEventListener("keydown", (e) => { if (e.key === "Enter") createEvent(); });
+    $("createBtn").addEventListener("click", openCreateModal);
+    $("createModalClose").addEventListener("click", closeCreateModal);
+    $("createModal").addEventListener("click", (e) => { if (e.target === $("createModal")) closeCreateModal(); });
+    $("createAlbumOption").addEventListener("click", openAlbumNameModal);
+    $("createFileOption").addEventListener("click", chooseCreateFile);
+    $("albumNameClose").addEventListener("click", closeAlbumNameModal);
+    $("albumNameModal").addEventListener("click", (e) => { if (e.target === $("albumNameModal")) closeAlbumNameModal(); });
+    $("albumNameConfirm").addEventListener("click", confirmCreateAlbum);
+    $("albumNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmCreateAlbum(); });
+
     $("enterBtn").addEventListener("click", enterById);
     $("enterId").addEventListener("keydown", (e) => { if (e.key === "Enter") enterById(); });
 
     $("navEvents").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
+    $("navFiles").addEventListener("click", () => { showView("viewFiles"); loadFiles(); });
     $("backBtn").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
     $("settingsBtn").addEventListener("click", openSettings);
     $("backFromSettings").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
@@ -440,6 +605,11 @@
     $("uploadBtn").addEventListener("click", uploadPhotos);
     $("uploadRafBtn").addEventListener("click", uploadRaf);
 
+    // 共享文件
+    $("fileInput").addEventListener("change", () => pickFile($("fileInput").files[0] || null));
+    $("fileUploadBtn").addEventListener("click", uploadSharedFile);
+    $("fileUploadBtn").disabled = true;
+
     $("langToggle").addEventListener("click", toggleLang);
     $("langToggle2").addEventListener("click", toggleLang);
   }
@@ -448,6 +618,7 @@
     applyI18n();
     if (state.currentEvent) renderDetail();
     if (!$("viewEvents").hidden) renderEvents();
+    if (!$("viewFiles").hidden) renderFiles();
   }
 
   // ===== 初始化 =====

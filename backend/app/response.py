@@ -58,3 +58,34 @@ def photo_to_dict(p: dict, token: str) -> dict:
         "fallback_original_url": local_original,
         "fallback_raf_url": local_raf,
     }
+
+
+def format_size(size_bytes) -> str:
+    if size_bytes is None:
+        return ""
+    size_bytes = int(size_bytes)
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def share_file_to_dict(f: dict) -> dict:
+    """共享文件序列化（管理端与公共端共用）。"""
+    return {
+        "file_id": f["file_id"],
+        "filename": f["original_filename"],
+        "file_size": f["file_size"],
+        "file_size_text": format_size(f["file_size"]),
+        "mime_type": f["mime_type"] or "application/octet-stream",
+        "share_token": f["share_token"],
+        "share_url": f"/share/files/{f['share_token']}",
+        "download_url": f"/share/files/{f['share_token']}/download",
+        "created_at": _dt(f["created_at"]),
+        "expires_at": _dt(f["expires_at"]),
+        "download_count": f["download_count"],
+    }

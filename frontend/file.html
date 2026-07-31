@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0d">
+  <title>共享文件</title>
+  <base href="/activity_image_list/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0b0d;
+      --bg-grad: radial-gradient(120% 80% at 50% -10%, #1a1a20 0%, #0b0b0d 55%);
+      --surface: #16161a;
+      --surface-2: #1d1d22;
+      --border: #26262b;
+      --text: #f4f1ea;
+      --text-dim: #9a958c;
+      --text-faint: #6b675f;
+      --accent: #cda35c;
+      --accent-dim: #b8893f;
+      --accent-soft: rgba(205, 163, 92, 0.14);
+      --danger: #d96565;
+      --ok: #7bbf8a;
+      --radius: 10px;
+      --radius-sm: 7px;
+      --shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      --font-display: "Fraunces", Georgia, serif;
+      --font-body: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      background: var(--bg-grad);
+      background-attachment: fixed;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    button { font-family: inherit; cursor: pointer; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 22px;
+      background: rgba(11, 11, 13, 0.72);
+      backdrop-filter: saturate(140%) blur(18px);
+      -webkit-backdrop-filter: saturate(140%) blur(18px);
+      border-bottom: 1px solid #1f1f24;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .brand-mark {
+      width: 8px; height: 22px; border-radius: 2px;
+      background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-weight: 600; font-size: 19px; margin: 0;
+    }
+    .lang-toggle {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      border-radius: 999px;
+      padding: 5px 12px; font-size: 12px; font-weight: 600;
+    }
+    .lang-toggle .lang-opt.active { color: var(--accent); }
+    .lang-toggle .lang-sep { color: var(--text-faint); margin: 0 3px; }
+
+    .wrap {
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 20px;
+    }
+    .card {
+      width: 100%; max-width: 460px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 36px 32px;
+      text-align: center;
+    }
+    .file-icon {
+      width: 72px; height: 72px;
+      margin: 0 auto 18px;
+      border-radius: 18px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(205, 163, 92, 0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px;
+    }
+    .file-name {
+      font-family: var(--font-display);
+      font-size: 21px; font-weight: 600; margin: 0 0 8px;
+      word-break: break-all;
+    }
+    .file-meta {
+      color: var(--text-dim); font-size: 13px;
+      margin-bottom: 22px;
+      line-height: 1.9;
+    }
+    .file-meta .row { display: flex; justify-content: space-between; gap: 16px; }
+    .file-meta .row .label { color: var(--text-faint); }
+    .status-expired {
+      color: var(--danger); font-weight: 600;
+    }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+      border: none; border-radius: 12px;
+      color: #1a1205; font-size: 15px; font-weight: 700;
+      padding: 14px 20px;
+      transition: all 0.18s;
+      text-decoration: none;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(205, 163, 92, 0.35); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+    .btn.btn-danger {
+      background: rgba(217, 101, 101, 0.12);
+      color: var(--danger);
+      box-shadow: none;
+    }
+    .btn-sm {
+      margin-top: 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 13px; font-weight: 600;
+      border-radius: 10px; padding: 9px 14px;
+      transition: all 0.15s;
+      width: 100%;
+    }
+    .btn-sm:hover { color: var(--accent); border-color: var(--accent); }
+    .loading { color: var(--text-faint); padding: 40px 0; }
+    .error-card .file-icon { background: rgba(217,101,101,.08); border-color: rgba(217,101,101,.3); }
+    .error-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+    .error-desc { color: var(--text-dim); font-size: 14px; margin-bottom: 22px; }
+
+    .site-footer {
+      text-align: center;
+      padding: 16px 16px 22px;
+      color: var(--text-faint);
+      font-size: 12px;
+    }
+    .site-footer a { color: var(--text-faint); text-decoration: none; }
+    .site-footer a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand-mark"></span>
+      <h1 class="brand">共享文件</h1>
+    </div>
+    <button class="lang-toggle" id="langToggle" type="button" aria-label="语言">
+      <span class="lang-opt" data-lang="zh">中文</span>
+      <span class="lang-sep">/</span>
+      <span class="lang-opt" data-lang="en">EN</span>
+    </button>
+  </header>
+
+  <main class="wrap">
+    <!-- 加载中 -->
+    <div class="card" id="cardLoading">
+      <div class="loading" id="loadingText">加载中…</div>
+    </div>
+
+    <!-- 文件信息 -->
+    <div class="card" id="cardFile" hidden>
+      <div class="file-icon">📄</div>
+      <h2 class="file-name" id="fileName"></h2>
+      <div class="file-meta">
+        <div class="row"><span class="label" id="labelSize">大小</span><span id="fileSize"></span></div>
+        <div class="row"><span class="label" id="labelTime">上传时间</span><span id="fileTime"></span></div>
+        <div class="row"><span class="label" id="labelExpire">有效期</span><span id="fileExpire"></span></div>
+        <div class="row"><span class="label" id="labelDownloads">下载次数</span><span id="fileDownloads"></span></div>
+      </div>
+      <button class="btn" id="downloadBtn" type="button">
+        <span id="downloadBtnText">下载文件</span>
+      </button>
+      <button class="btn-sm" id="copyLinkBtn" type="button">复制链接</button>
+    </div>
+
+    <!-- 错误 / 已失效 -->
+    <div class="card error-card" id="cardError" hidden>
+      <div class="file-icon">⚠️</div>
+      <h2 class="error-title" id="errorTitle">链接无效</h2>
+      <p class="error-desc" id="errorDesc">文件不存在或链接已失效</p>
+      <button class="btn btn-danger" id="closeBtn" type="button">关闭</button>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2024302719号</a>
+  </footer>
+
+  <script src="static/js/i18n.js?v=10"></script>
+  <script src="static/js/api.js?v=10"></script>
+  <script>
+  (function () {
+    "use strict";
+    var $ = function (id) { return document.getElementById(id); };
+
+    var DICT = {
+      zh: {
+        title: "共享文件",
+        loading: "加载中…",
+        label_size: "大小",
+        label_time: "上传时间",
+        label_expire: "有效期",
+        label_downloads: "下载次数",
+        expire_never: "永不过期",
+        expired: "已过期",
+        expire_until: "至 {t}",
+        download: "下载文件",
+        copy: "复制链接",
+        copied: "链接已复制",
+        error_title: "链接无效",
+        error_desc: "文件不存在或链接已失效",
+        close: "关闭",
+      },
+      en: {
+        title: "Shared File",
+        loading: "Loading…",
+        label_size: "Size",
+        label_time: "Uploaded",
+        label_expire: "Expiry",
+        label_downloads: "Downloads",
+        expire_never: "Never",
+        expired: "Expired",
+        expire_until: "Until {t}",
+        download: "Download File",
+        copy: "Copy Link",
+        copied: "Link copied",
+        error_title: "Invalid Link",
+        error_desc: "File not found or link expired",
+        close: "Close",
+      },
+    };
+
+    var lang = localStorage.getItem("lang") === "en" ? "en" : "zh";
+    function t(key, vars) {
+      var s = (DICT[lang] && DICT[lang][key]) || DICT.zh[key] || key;
+      if (vars) {
+        Object.keys(vars).forEach(function (k) {
+          s = s.split("{" + k + "}").join(vars[k]);
+        });
+      }
+      return s;
+    }
+    function applyLang() {
+      document.documentElement.lang = lang === "en" ? "en" : "zh";
+      document.querySelectorAll(".lang-opt").forEach(function (o) {
+        o.classList.toggle("active", o.dataset.lang === lang);
+      });
+      document.title = t("title");
+      $("loadingText").textContent = t("loading");
+      $("labelSize").textContent = t("label_size");
+      $("labelTime").textContent = t("label_time");
+      $("labelExpire").textContent = t("label_expire");
+      $("labelDownloads").textContent = t("label_downloads");
+      $("downloadBtnText").textContent = t("download");
+      $("copyLinkBtn").textContent = t("copy");
+      $("errorTitle").textContent = t("error_title");
+      $("errorDesc").textContent = t("error_desc");
+      $("closeBtn").textContent = t("close");
+    }
+    function toggleLang() {
+      lang = lang === "zh" ? "en" : "zh";
+      localStorage.setItem("lang", lang);
+      applyLang();
+    }
+
+    function show(id) {
+      ["cardLoading", "cardFile", "cardError"].forEach(function (k) {
+        $(k).hidden = k !== id;
+      });
+    }
+
+    function copyText(text) {
+      function done() {
+        var btn = $("copyLinkBtn");
+        btn.textContent = t("copied");
+        setTimeout(function () { btn.textContent = t("copy"); }, 2000);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {
+          var ta = document.createElement("textarea");
+          ta.value = text; document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); done(); } catch (e) {}
+          document.body.removeChild(ta);
+        });
+      } else {
+        var ta = document.createElement("textarea");
+        ta.value = text; document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    }
+
+    // 从 URL 提取 token：/share/files/{token}
+    var token = "";
+    (function () {
+      var seg = location.pathname.split("/").filter(Boolean);
+      token = seg[seg.length - 1] || "";
+    })();
+
+    function load() {
+      applyLang();
+      if (!token) {
+        show("cardError");
+        return;
+      }
+      API.fileInfo(token).then(function (data) {
+        var f = data;
+        $("fileName").textContent = f.filename;
+        $("fileSize").textContent = f.file_size_text || "";
+        $("fileTime").textContent = f.created_at || "";
+        $("fileDownloads").textContent = String(f.download_count || 0);
+
+        var expEl = $("fileExpire");
+        if (f.expired) {
+          expEl.textContent = t("expired");
+          expEl.className = "status-expired";
+          $("downloadBtn").disabled = true;
+          $("downloadBtn").classList.add("btn-danger");
+        } else {
+          expEl.textContent = f.expires_at_text ? t("expire_until", { t: f.expires_at_text }) : t("expire_never");
+          expEl.className = "";
+          $("downloadBtn").disabled = false;
+          $("downloadBtn").classList.remove("btn-danger");
+        }
+        $("downloadBtn").onclick = function () {
+          window.location.href = API.url(f.download_url);
+        };
+        $("copyLinkBtn").onclick = function () {
+          copyText(location.href.split("#")[0]);
+        };
+        show("cardFile");
+      }).catch(function () {
+        show("cardError");
+      });
+    }
+
+    $("langToggle").addEventListener("click", toggleLang);
+    $("closeBtn").addEventListener("click", function () { window.close(); });
+    load();
+  })();
+  </script>
+</body>
+</html>

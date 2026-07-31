@@ -8,6 +8,7 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 FRONTEND_DIR = os.path.join(PROJECT_DIR, "frontend")
 STORAGE_DIR = os.path.join(BASE_DIR, "storage")
+FILES_DIR = os.path.join(STORAGE_DIR, "files")
 
 # 数据库配置（可通过环境变量覆盖，或直接修改此处默认值）
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
@@ -27,7 +28,8 @@ PREVIEW_QUALITY = 85            # JPEG 压缩质量
 IMAGE_PROCESS_CONCURRENCY = 2   # 并发压缩数限制，避免内存峰值
 
 # 上传限制
-MAX_UPLOAD_SIZE_MB = 50         # 单文件上限
+MAX_UPLOAD_SIZE_MB = 50         # 单文件上限（照片）
+FILE_MAX_UPLOAD_SIZE_MB = int(os.getenv("FILE_MAX_UPLOAD_SIZE_MB", "500"))  # 共享文件上限
 
 # 默认摄影师账号（启动时若不存在则自动创建）
 DEFAULT_ADMIN_USER = os.getenv("DEFAULT_ADMIN_USER", "admin")

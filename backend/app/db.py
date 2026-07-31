@@ -122,6 +122,27 @@ async def init_db():
                     await cur.execute(f"ALTER TABLE photo {col_def}")
                 except Exception:
                     pass
+
+            # 共享文件（下载中心合并而来）
+            await cur.execute("""
+                CREATE TABLE IF NOT EXISTS share_file (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    file_id VARCHAR(20) NOT NULL UNIQUE,
+                    original_filename VARCHAR(255) NOT NULL,
+                    file_size BIGINT NOT NULL,
+                    mime_type VARCHAR(128) DEFAULT '',
+                    storage_path VARCHAR(512) DEFAULT '',
+                    oss_key VARCHAR(512) DEFAULT NULL,
+                    share_token VARCHAR(32) NOT NULL UNIQUE,
+                    created_by INT NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME DEFAULT NULL,
+                    download_count INT NOT NULL DEFAULT 0,
+                    INDEX idx_created_by (created_by),
+                    CONSTRAINT fk_sharefile_photographer
+                        FOREIGN KEY (created_by) REFERENCES photographer(id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
         await conn.commit()
 
     # 确保默认摄影师存在
