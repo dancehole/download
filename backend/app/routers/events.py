@@ -63,7 +63,7 @@ async def get_event(event_id: str, user: dict = Depends(current_photographer)):
         return fail(404, "活动不存在")
     tags = await models.get_tags(ev["id"])
     data = event_to_dict(ev)
-    data["tags"] = [{"tag": t["tag"], "count": t["cnt"]} for t in tags]
+    data["tags"] = [{"tag": t["tag"], "tag_en": t.get("tag_en") or t["tag"], "count": t["cnt"]} for t in tags]
     return ok(data)
 
 

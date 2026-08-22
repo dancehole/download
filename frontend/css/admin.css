@@ -253,6 +253,41 @@ input { font-family: inherit; }
 .upload-card .field { margin-bottom: 12px; }
 .muted { color: var(--text-faint); font-size: 12px; margin: 0 0 10px; }
 
+/* 已有标签快捷选择 */
+.tag-suggest { margin: 0 0 12px; }
+.tag-suggest-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+  max-width: 100%;
+}
+.tag-chip:hover, .tag-chip:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+.tag-chip-zh { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag-chip-en { color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag-chip:hover .tag-chip-en { color: var(--accent); }
+.tag-chip em {
+  font-style: normal;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .dropzone {
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius);

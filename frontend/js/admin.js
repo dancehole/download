@@ -319,6 +319,8 @@
   async function openEvent(eventId) {
     showView("viewDetail");
     $("enterId").value = "";
+    $("uploadTag").value = "";
+    $("uploadTagEn").value = "";
     try {
       const ev = await API.getEvent(eventId);
       state.currentEvent = ev;
@@ -339,6 +341,57 @@
     $("shareLink").value = location.origin + API.getAutoPrefix() + "/share/" + ev.share_token;
     $("previewSizeSelect").value = ev.preview_size || 640;
     $("eventUseOss").checked = ev.use_oss !== false;
+    populateTagSuggestions(ev);
+  }
+
+  // ===== 已有标签快捷选择（中英文配对，避免重复输入）=====
+  function populateTagSuggestions(ev) {
+    const tags = (ev && ev.tags) || [];
+    const dlZh = $("tagDatalist");
+    const dlEn = $("tagEnDatalist");
+    const chips = $("tagChips");
+    dlZh.innerHTML = tags.map((t) => `<option value="${escapeHtml(t.tag)}"></option>`).join("");
+    dlEn.innerHTML = tags.map((t) => `<option value="${escapeHtml(t.tag_en || t.tag)}"></option>`).join("");
+    if (tags.length === 0) {
+      $("tagSuggest").hidden = true;
+      chips.innerHTML = "";
+      return;
+    }
+    chips.innerHTML = tags.map((t) => {
+      const en = t.tag_en || t.tag;
+      return `<button type="button" class="tag-chip" data-zh="${escapeHtml(t.tag)}" data-en="${escapeHtml(en)}" title="${escapeHtml(t.tag)} / ${escapeHtml(en)}">
+        <span class="tag-chip-zh">${escapeHtml(t.tag)}</span>
+        <span class="tag-chip-en">${escapeHtml(en)}</span>
+        <em>${t.count}</em>
+      </button>`;
+    }).join("");
+    $("tagSuggest").hidden = false;
+    chips.querySelectorAll(".tag-chip").forEach((b) => {
+      b.addEventListener("click", () => {
+        $("uploadTag").value = b.dataset.zh;
+        $("uploadTagEn").value = b.dataset.en;
+      });
+    });
+  }
+
+  // 输入时中英文配对自动补全：中文命中已有标签且英文框为空 → 自动补英文；反之亦然
+  function bindTagAutoPair() {
+    const zh = $("uploadTag");
+    const en = $("uploadTagEn");
+    const knownTags = () => (state.currentEvent && state.currentEvent.tags) || [];
+    zh.addEventListener("input", () => {
+      const hit = knownTags().find((t) => t.tag === zh.value.trim());
+      if (hit && !en.value.trim()) {
+        en.value = hit.tag_en || hit.tag;
+      }
+    });
+    en.addEventListener("input", () => {
+      const v = en.value.trim();
+      const hit = knownTags().find((t) => (t.tag_en || t.tag) === v);
+      if (hit && !zh.value.trim()) {
+        zh.value = hit.tag;
+      }
+    });
   }
 
   async function loadThumbs() {
@@ -604,6 +657,7 @@
     setupDropzone("dropzoneRaf", "rafInput", "rafFiles", "raf");
     $("uploadBtn").addEventListener("click", uploadPhotos);
     $("uploadRafBtn").addEventListener("click", uploadRaf);
+    bindTagAutoPair();
 
     // 共享文件
     $("fileInput").addEventListener("change", () => pickFile($("fileInput").files[0] || null));

@@ -195,12 +195,18 @@
             <h3 data-i18n="upload_photos">上传照片</h3>
             <label class="field">
               <span class="field-label" data-i18n="tag_optional">标签（可选）</span>
-              <input type="text" id="uploadTag" class="input" data-i18n-ph="tag_ph" placeholder="如：开幕式">
+              <input type="text" id="uploadTag" class="input" list="tagDatalist" data-i18n-ph="tag_ph" placeholder="如：开幕式" autocomplete="off">
             </label>
             <label class="field">
               <span class="field-label" data-i18n="tag_en_optional">英文标签（可选，缺省同中文）</span>
-              <input type="text" id="uploadTagEn" class="input" data-i18n-ph="tag_en_ph" placeholder="e.g. Opening">
+              <input type="text" id="uploadTagEn" class="input" list="tagEnDatalist" data-i18n-ph="tag_en_ph" placeholder="e.g. Opening" autocomplete="off">
             </label>
+            <datalist id="tagDatalist"></datalist>
+            <datalist id="tagEnDatalist"></datalist>
+            <div class="tag-suggest" id="tagSuggest" hidden>
+              <span class="tag-suggest-label" data-i18n="existing_tags">已有标签（点击直接选用）</span>
+              <div class="tag-chips" id="tagChips"></div>
+            </div>
             <div class="dropzone" id="dropzoneJpg" tabindex="0">
               <div class="dz-icon">📷</div>
               <div class="dz-text" data-i18n="upload_area_hint">点击或拖拽 JPG 文件到此处</div>
