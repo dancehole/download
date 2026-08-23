@@ -46,6 +46,11 @@ async def upload_photos(
     if not files:
         return fail(400, "未选择文件")
 
+    # 批量上限保护：防止单请求塞入过多文件导致长时间占用 worker / 触发 nginx 413
+    max_files = int(os.getenv("MAX_FILES_PER_REQUEST", "100"))
+    if len(files) > max_files:
+        return fail(400, f"单次最多上传 {max_files} 个文件，请分批上传")
+
     tag = (tag or "").strip() or None
     tag_en = (tag_en or "").strip() or tag
     base = os.path.join(STORAGE_DIR, ev["event_id"])
@@ -57,59 +62,91 @@ async def upload_photos(
 
     preview_size = ev.get("preview_size", 640)
     use_oss = bool(ev.get("use_oss", True)) and oss_service.is_enabled()
+
+    def _cleanup(*paths):
+        for p in paths:
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except OSError:
+                pass
+
     results = []
     for f in files:
+        entry = {"filename": f.filename, "status": "ok", "error": None}
         ext = os.path.splitext(f.filename)[1].lower()
         if ext not in JPG_EXT:
+            # 非 JPG（如 iPhone HEIC、PNG）直接标记跳过，让前端明确告知用户
+            entry["status"] = "skipped"
+            entry["error"] = "非 JPG 格式，已跳过"
+            results.append(entry)
             continue
-        safe = f"{uuid.uuid4().hex}{ext}"
-        orig_path = os.path.join(orig_dir, safe)
-        prev_uuid = uuid.uuid4().hex
-        prev_path = os.path.join(prev_dir, f"{prev_uuid}.jpg")
-        await _stream_to_disk(f, orig_path)
-        taken_at = await image_service.process_image(orig_path, prev_path, preview_size)
 
-        oss_original_key = None
-        oss_preview_key = None
-        if use_oss:
-            event_folder = ev["event_id"]
-            oss_original_key = f"{event_folder}/original/{safe}"
-            oss_preview_key = f"{event_folder}/preview/{prev_uuid}.jpg"
-            try:
-                with open(orig_path, "rb") as fp:
-                    oss_service.upload_fileobj(fp, oss_original_key, "image/jpeg")
-                with open(prev_path, "rb") as fp:
-                    oss_service.upload_fileobj(fp, oss_preview_key, "image/jpeg")
-            except Exception:
-                # OSS 不可用（如 Bucket 缺失/网络异常）时降级为本地存储
-                oss_original_key = None
-                oss_preview_key = None
+        orig_path = prev_path = None
+        try:
+            safe = f"{uuid.uuid4().hex}{ext}"
+            orig_path = os.path.join(orig_dir, safe)
+            prev_uuid = uuid.uuid4().hex
+            prev_path = os.path.join(prev_dir, f"{prev_uuid}.jpg")
+            await _stream_to_disk(f, orig_path)
+            taken_at = await image_service.process_image(orig_path, prev_path, preview_size)
 
-        # 若 raf 目录已存在同名 RAF，则关联
-        raf_path = None
-        oss_raf_key = None
-        base_name = os.path.splitext(f.filename)[0]
-        candidate = os.path.join(raf_dir, base_name + ".RAF")
-        if os.path.exists(candidate):
-            raf_path = candidate
+            oss_original_key = None
+            oss_preview_key = None
             if use_oss:
-                oss_raf_key = f"{ev['event_id']}/raf/{base_name}.RAF"
-                with open(candidate, "rb") as fp:
-                    oss_service.upload_fileobj(fp, oss_raf_key, "application/octet-stream")
+                event_folder = ev["event_id"]
+                oss_original_key = f"{event_folder}/original/{safe}"
+                oss_preview_key = f"{event_folder}/preview/{prev_uuid}.jpg"
+                try:
+                    with open(orig_path, "rb") as fp:
+                        oss_service.upload_fileobj(fp, oss_original_key, "image/jpeg")
+                    with open(prev_path, "rb") as fp:
+                        oss_service.upload_fileobj(fp, oss_preview_key, "image/jpeg")
+                except Exception:
+                    # OSS 不可用（如 Bucket 缺失/网络异常）时降级为本地存储
+                    oss_original_key = None
+                    oss_preview_key = None
 
-        pid = await models.create_photo(
-            ev["id"], tag, tag_en, f.filename, orig_path, prev_path, raf_path, taken_at,
-            oss_original_key=oss_original_key, oss_preview_key=oss_preview_key,
-            oss_raf_key=oss_raf_key,
-        )
-        results.append({
-            "photo_id": pid,
-            "filename": f.filename,
-            "taken_at": taken_at.strftime("%Y-%m-%d %H:%M:%S") if taken_at else None,
-        })
+            # 若 raf 目录已存在同名 RAF，则关联
+            raf_path = None
+            oss_raf_key = None
+            base_name = os.path.splitext(f.filename)[0]
+            candidate = os.path.join(raf_dir, base_name + ".RAF")
+            if os.path.exists(candidate):
+                raf_path = candidate
+                if use_oss:
+                    oss_raf_key = f"{ev['event_id']}/raf/{base_name}.RAF"
+                    with open(candidate, "rb") as fp:
+                        oss_service.upload_fileobj(fp, oss_raf_key, "application/octet-stream")
 
-    await models.increment_photo_count(ev["id"], len(results))
-    return ok({"uploaded": len(results), "photos": results})
+            pid = await models.create_photo(
+                ev["id"], tag, tag_en, f.filename, orig_path, prev_path, raf_path, taken_at,
+                oss_original_key=oss_original_key, oss_preview_key=oss_preview_key,
+                oss_raf_key=oss_raf_key,
+            )
+            entry.update({
+                "photo_id": pid,
+                "taken_at": taken_at.strftime("%Y-%m-%d %H:%M:%S") if taken_at else None,
+            })
+        except HTTPException as e:
+            # 单文件超限（413）等 → 只标记该文件失败，不拖垮整批
+            _cleanup(orig_path, prev_path)
+            entry["status"] = "failed"
+            entry["error"] = str(e.detail)
+        except Exception as e:
+            # 其余异常（网络中断、PIL 解码失败等）同样只影响单个文件
+            _cleanup(orig_path, prev_path)
+            entry["status"] = "failed"
+            entry["error"] = str(e)[:200]
+        results.append(entry)
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    await models.increment_photo_count(ev["id"], ok_count)
+    return ok({
+        "uploaded": ok_count,
+        "total": len(results),
+        "results": results,
+    })
 
 
 @router.post("/events/{event_id}/upload-raf")

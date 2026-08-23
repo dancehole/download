@@ -575,6 +575,59 @@ input { font-family: inherit; }
 .create-option-text small { font-size: 12px; color: var(--text-faint); }
 .create-option-arrow { color: var(--text-faint); font-size: 20px; }
 
+/* ===== 上传进度 ===== */
+.upload-progress {
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.progress-track {
+  height: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-dim));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.progress-text { margin-top: 10px; font-size: 14px; color: var(--text); font-weight: 600; }
+.progress-sub { margin-top: 2px; font-size: 12px; color: var(--text-faint); }
+.upload-progress .btn { margin-top: 10px; }
+
+/* ===== 上传结果弹窗 ===== */
+.ures-summary { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.ures-hint { font-size: 12px; color: var(--text-dim); margin: 4px 0 8px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.ures-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 10px 0 14px;
+}
+.ures-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.ures-row:last-child { border-bottom: none; }
+.ures-row .ures-icon { width: 18px; text-align: center; flex: none; }
+.ures-row.ok .ures-icon { color: var(--ok); }
+.ures-row.failed .ures-icon { color: var(--danger); }
+.ures-row.skipped .ures-icon, .ures-row.cancelled .ures-icon { color: var(--text-faint); }
+.ures-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.ures-err { font-size: 12px; color: var(--text-dim); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
+.ures-actions { display: flex; gap: 10px; }
+.ures-actions .btn { flex: 1; }
+
 /* ===== 页脚（ICP 备案） ===== */
 .site-footer {
   text-align: center;

@@ -489,11 +489,11 @@
   function setFiles(fileList, kind, listEl) {
     const arr = Array.from(fileList);
     if (kind === "jpg") {
-      state.jpgFiles = arr.filter((f) => /\\.jpe?g$/i.test(f.name));
+      state.jpgFiles = arr.filter((f) => /\.jpe?g$/i.test(f.name));
       renderFileList(listEl, state.jpgFiles);
       $("uploadBtn").disabled = state.jpgFiles.length === 0;
     } else {
-      state.rafFiles = arr.filter((f) => /\\.raf$/i.test(f.name));
+      state.rafFiles = arr.filter((f) => /\.raf$/i.test(f.name));
       renderFileList(listEl, state.rafFiles);
       $("uploadRafBtn").disabled = state.rafFiles.length === 0;
     }
@@ -503,33 +503,167 @@
     el.innerHTML = files.map((f) => `<div class="fitem">${escapeHtml(f.name)} <span style="color:#bbb">(${(f.size / 1024 / 1024).toFixed(1)}MB)</span></div>`).join("");
   }
 
+  // ===== 上传照片（分批 + 进度 + 可中断 + 结果报告） =====
+  const UPLOAD_BATCH_SIZE = 10;   // 每批张数：控制单请求体量，避免 nginx 413 / 长连接中断
+  const UPLOAD_RETRY = 1;         // 失败文件自动重试轮数
+  let uploadAbort = null;         // AbortController
+  let uploadWakeLock = null;
+
+  function chunk(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  function uploadStats(results) {
+    const s = { ok: 0, failed: 0, skipped: 0, cancelled: 0 };
+    for (const r of results) if (s[r.status] !== undefined) s[r.status]++;
+    return s;
+  }
+
+  function setUploadProgress(done, total, stats, batchCur, batchTotal) {
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const bar = $("uploadProgressBar");
+    const text = $("uploadProgressText");
+    const sub = $("uploadProgressSub");
+    if (bar) bar.style.width = pct + "%";
+    if (text) text.textContent = I18N.t("upload_progress", { done, total, ok: stats.ok });
+    if (sub) sub.textContent = I18N.t("upload_batch", { cur: batchCur, total: batchTotal });
+  }
+
+  function showUploadProgress() {
+    $("uploadProgress").hidden = false;
+    $("uploadProgressBar").style.width = "0%";
+  }
+  function hideUploadProgress() {
+    $("uploadProgress").hidden = true;
+  }
+
+  async function requestWakeLock() {
+    try {
+      if (navigator.wakeLock && navigator.wakeLock.request) {
+        uploadWakeLock = await navigator.wakeLock.request("screen");
+      }
+    } catch (e) { /* 浏览器不支持或拒绝时忽略，不影响上传 */ }
+  }
+  function releaseWakeLock() {
+    if (uploadWakeLock) {
+      try { uploadWakeLock.release(); } catch (e) { /* ignore */ }
+      uploadWakeLock = null;
+    }
+  }
+
+  function showUploadResult(results) {
+    const stats = uploadStats(results);
+    $("uploadResultSummary").textContent = I18N.t("upload_result_summary", {
+      ok: stats.ok, fail: stats.failed, skip: stats.skipped, cancel: stats.cancelled,
+    });
+    $("uploadCancelHint").hidden = stats.cancelled === 0;
+    $("uploadSkipHint").hidden = stats.skipped === 0;
+    $("uploadRetryBtn").hidden = stats.failed === 0;
+    $("uploadResultList").innerHTML = results.map((r) => {
+      const icon = r.status === "ok" ? "✓" : r.status === "failed" ? "✗" : r.status === "skipped" ? "⏭" : "✖";
+      return `<div class="ures-row ${r.status}"><span class="ures-icon">${icon}</span>` +
+        `<span class="ures-name">${escapeHtml(r.filename)}</span>` +
+        `<span class="ures-err">${escapeHtml(r.error || "")}</span></div>`;
+    }).join("");
+    $("uploadResultModal").hidden = false;
+  }
+
   async function uploadPhotos() {
-    if (state.jpgFiles.length === 0) return;
+    if (state.jpgFiles.length === 0 || uploadAbort) return;
     const btn = $("uploadBtn");
     const tag = $("uploadTag").value.trim() || null;
     const tagEn = $("uploadTagEn").value.trim() || null;
+    const evId = state.currentEvent.event_id;
+    const total = state.jpgFiles.length;
+    const results = [];
+    let done = 0;
+
     btn.disabled = true;
-    const orig = btn.textContent;
     btn.textContent = I18N.t("uploading");
+    uploadAbort = new AbortController();
+    showUploadProgress();
+    await requestWakeLock();
+
+    const abortRemaining = (fromBatch, batches) => {
+      for (let i = fromBatch; i < batches.length; i++) {
+        for (const f of batches[i]) {
+          results.push({ filename: f.name, status: "cancelled", error: I18N.t("cancelled") });
+        }
+      }
+    };
+
     try {
-      const data = await API.uploadPhotos(state.currentEvent.event_id, state.jpgFiles, tag, tagEn);
-      toast(I18N.t("upload_success", { n: data.uploaded }), "ok");
-      state.jpgFiles = [];
-      $("jpgFiles").innerHTML = "";
-      $("jpgInput").value = "";
+      let batches = chunk(state.jpgFiles, UPLOAD_BATCH_SIZE);
+      for (let b = 0; b < batches.length; b++) {
+        if (uploadAbort.signal.aborted) { abortRemaining(b, batches); break; }
+        const batch = batches[b];
+        try {
+          const data = await API.uploadPhotos(evId, batch, tag, tagEn, uploadAbort.signal);
+          results.push(...((data && data.results) || batch.map((f) => ({ filename: f.name, status: "ok" }))));
+        } catch (e) {
+          if (uploadAbort.signal.aborted) {
+            results.push(...batch.map((f) => ({ filename: f.name, status: "cancelled", error: I18N.t("cancelled") })));
+            abortRemaining(b + 1, batches);
+            break;
+          }
+          // 整批网络失败 → 先标失败，稍后统一自动重试
+          results.push(...batch.map((f) => ({ filename: f.name, status: "failed", error: (e && e.msg) || I18N.t("network_error") })));
+        }
+        done += batch.length;
+        setUploadProgress(done, total, uploadStats(results), b + 1, batches.length);
+        await new Promise((r) => setTimeout(r, 60)); // 让 UI 呼吸
+      }
+
+      // 自动重试失败文件
+      for (let round = 0; round < UPLOAD_RETRY; round++) {
+        if (uploadAbort.signal.aborted) break;
+        const failedNames = results.filter((r) => r.status === "failed").map((r) => r.filename);
+        if (!failedNames.length) break;
+        const byName = new Map(state.jpgFiles.map((f) => [f.name, f]));
+        const retryFiles = failedNames.map((n) => byName.get(n)).filter(Boolean);
+        if (!retryFiles.length) break;
+        $("uploadProgressText").textContent = I18N.t("upload_retrying", { n: retryFiles.length });
+        for (const b of chunk(retryFiles, UPLOAD_BATCH_SIZE)) {
+          if (uploadAbort.signal.aborted) break;
+          try {
+            const data = await API.uploadPhotos(evId, b, tag, tagEn, uploadAbort.signal);
+            const okNames = new Set((data.results || []).filter((r) => r.status === "ok").map((r) => r.filename));
+            for (const r of results) {
+              if (r.status === "failed" && okNames.has(r.filename)) r.status = "ok";
+            }
+          } catch (e) { /* 仍失败则保留 failed 状态 */ }
+          await new Promise((r) => setTimeout(r, 60));
+        }
+      }
+    } finally {
+      releaseWakeLock();
+      hideUploadProgress();
+      uploadAbort = null;
+      btn.textContent = I18N.t("upload_btn");
+      btn.disabled = state.jpgFiles.length === 0;
+    }
+
+    // 清理已成功/已跳过的文件，保留失败与取消的以便重传
+    const keepNames = new Set(results.filter((r) => r.status === "failed" || r.status === "cancelled").map((r) => r.filename));
+    state.jpgFiles = state.jpgFiles.filter((f) => keepNames.has(f.name));
+    renderFileList($("jpgFiles"), state.jpgFiles);
+    $("jpgInput").value = "";
+    if (!state.jpgFiles.length) {
       $("uploadTag").value = "";
       $("uploadTagEn").value = "";
-      $("uploadBtn").disabled = true;
-      // 刷新活动信息与缩略图
-      state.currentEvent = await API.getEvent(state.currentEvent.event_id);
+    }
+    btn.disabled = state.jpgFiles.length === 0;
+
+    showUploadResult(results);
+
+    // 刷新活动信息与缩略图
+    try {
+      state.currentEvent = await API.getEvent(evId);
       renderDetail();
       await loadThumbs();
-    } catch (e) {
-      toast((e && e.msg) || I18N.t("load_failed"), "err");
-    } finally {
-      btn.disabled = state.jpgFiles.length > 0;
-      btn.textContent = orig;
-    }
+    } catch (e) { /* 刷新失败不阻塞结果展示 */ }
   }
 
   async function uploadRaf() {
@@ -657,6 +791,16 @@
     setupDropzone("dropzoneRaf", "rafInput", "rafFiles", "raf");
     $("uploadBtn").addEventListener("click", uploadPhotos);
     $("uploadRafBtn").addEventListener("click", uploadRaf);
+    $("uploadAbortBtn").addEventListener("click", () => { if (uploadAbort) uploadAbort.abort(); });
+    $("uploadResultClose").addEventListener("click", () => { $("uploadResultModal").hidden = true; });
+    $("uploadResultClose2").addEventListener("click", () => { $("uploadResultModal").hidden = true; });
+    $("uploadRetryBtn").addEventListener("click", () => {
+      $("uploadResultModal").hidden = true;
+      uploadPhotos();
+    });
+    $("uploadResultModal").addEventListener("click", (e) => {
+      if (e.target === $("uploadResultModal")) $("uploadResultModal").hidden = true;
+    });
     bindTagAutoPair();
 
     // 共享文件

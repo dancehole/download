@@ -128,12 +128,12 @@
     },
 
     // 上传
-    uploadPhotos: function (eventId, files, tag, tagEn) {
+    uploadPhotos: function (eventId, files, tag, tagEn, signal) {
       const fd = new FormData();
       for (let i = 0; i < files.length; i++) fd.append("files", files[i]);
       if (tag) fd.append("tag", tag);
       if (tagEn) fd.append("tag_en", tagEn);
-      return request("/events/" + encodeURIComponent(eventId) + "/upload", { method: "POST", body: fd });
+      return request("/events/" + encodeURIComponent(eventId) + "/upload", { method: "POST", body: fd, signal: signal });
     },
     uploadRaf: function (eventId, files) {
       const fd = new FormData();

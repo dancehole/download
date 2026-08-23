@@ -213,6 +213,12 @@
               <div class="dz-files" id="jpgFiles"></div>
               <input type="file" id="jpgInput" accept=".jpg,.jpeg,image/jpeg" multiple hidden>
             </div>
+            <div class="upload-progress" id="uploadProgress" hidden>
+              <div class="progress-track"><div class="progress-bar" id="uploadProgressBar"></div></div>
+              <div class="progress-text" id="uploadProgressText"></div>
+              <div class="progress-sub" id="uploadProgressSub"></div>
+              <button class="btn btn-danger" id="uploadAbortBtn" type="button" data-i18n="upload_abort">取消上传</button>
+            </div>
             <button class="btn btn-primary block" id="uploadBtn" type="button" disabled data-i18n="upload_btn">开始上传</button>
           </div>
 
@@ -345,10 +351,30 @@
     </div>
   </div>
 
+  <!-- 上传结果弹窗 -->
+  <div class="modal-mask" id="uploadResultModal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2 data-i18n="upload_result">上传结果</h2>
+        <button class="modal-close" id="uploadResultClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="ures-summary" id="uploadResultSummary"></div>
+        <div class="ures-hint" id="uploadSkipHint" hidden></div>
+        <div class="ures-hint" id="uploadCancelHint" hidden></div>
+        <div class="ures-list" id="uploadResultList"></div>
+        <div class="ures-actions">
+          <button class="btn btn-primary" id="uploadRetryBtn" type="button" data-i18n="upload_retry">重试失败文件</button>
+          <button class="btn" id="uploadResultClose2" type="button" data-i18n="close">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden></div>
 
-  <script src="static/js/i18n.js?v=10"></script>
-  <script src="static/js/api.js?v=10"></script>
-  <script src="static/js/admin.js?v=10"></script>
+  <script src="static/js/i18n.js?v=11"></script>
+  <script src="static/js/api.js?v=11"></script>
+  <script src="static/js/admin.js?v=11"></script>
 </body>
 </html>
