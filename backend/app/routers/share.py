@@ -23,11 +23,14 @@ async def _resolve_photo(token: str, photo_id: int):
 
 
 def _file_response(path: str, filename: str, media: str, download: bool, cache: bool = False):
-    disposition = "attachment" if download else "inline"
-    headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
+    headers = {}
     if cache:
         headers["Cache-Control"] = "public, max-age=86400"
-    return FileResponse(path, media_type=media, filename=filename, headers=headers)
+    # 不手动拼 Content-Disposition：交给 Starlette 的 RFC 5987 处理，
+    # 中文/特殊字符文件名自动转 filename*=utf-8''...，避免 latin-1 编码 500
+    return FileResponse(path, media_type=media, filename=filename,
+                        content_disposition_type="attachment" if download else "inline",
+                        headers=headers)
 
 
 @router.get("/share/{token}")

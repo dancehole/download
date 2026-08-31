@@ -181,5 +181,4 @@ async def share_file_download(token: str):
         local,
         filename=f["original_filename"],
         media_type=f["mime_type"] or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{f["original_filename"]}"'},
     )
