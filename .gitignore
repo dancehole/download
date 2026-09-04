@@ -21,3 +21,6 @@ backend/.env
 
 # 文档生成脚本
 docs/gen_docs.py
+
+# WorkBuddy 会话记忆（本地，勿入库）
+.workbuddy/

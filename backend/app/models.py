@@ -13,14 +13,16 @@ async def get_photographer_by_username(username: str):
 
 # ---------- 活动 ----------
 async def create_event(event_id: str, event_name: str, share_token: str, created_by: int,
-                       preview_size: int = 640, use_oss: bool = True):
+                       preview_size: int = 640, use_oss: bool = True, expires_at=None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO event (event_id, event_name, share_token, preview_size, use_oss, created_by) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (event_id, event_name, share_token, preview_size, 1 if use_oss else 0, created_by),
+                "INSERT INTO event (event_id, event_name, share_token, preview_size, use_oss, "
+                "expires_at, created_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (event_id, event_name, share_token, preview_size, 1 if use_oss else 0,
+                 expires_at, created_by),
             )
             await conn.commit()
             return await get_event_by_id(event_id)
@@ -110,6 +112,80 @@ async def delete_event(event_pk: int):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute("DELETE FROM event WHERE id=%s", (event_pk,))
+            await conn.commit()
+
+
+# ---------- 相册过期 / 清理标记 ----------
+async def update_event_expiry(event_pk: int, expires_at):
+    """设置（或清除）相册过期时间。expires_at 为 None 表示永不过期。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE event SET expires_at=%s WHERE id=%s", (expires_at, event_pk)
+            )
+            await conn.commit()
+
+
+async def clear_event_oss_keys(event_pk: int):
+    """清空相册内所有照片的 OSS key（对象已删，避免继续拼签名 URL 指向死链）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE photo SET oss_original_key=NULL, oss_preview_key=NULL, "
+                "oss_raf_key=NULL WHERE event_id=%s",
+                (event_pk,),
+            )
+            await conn.commit()
+
+
+async def delete_photos_by_event(event_pk: int) -> int:
+    """清空相册内所有照片记录（文件本体由清理流程先行删除）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM photo WHERE event_id=%s", (event_pk,))
+            n = cur.rowcount
+            await conn.commit()
+            return n
+
+
+async def mark_event_oss_cleared(event_pk: int):
+    """标记相册的 OSS 远程对象已清空（本地文件保留）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE event SET oss_cleared_at=NOW() WHERE id=%s", (event_pk,)
+            )
+            await conn.commit()
+
+
+async def mark_event_local_cleared(event_pk: int):
+    """标记相册的本地照片已删除（OSS 可能仍保留），照片数归零留空壳。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE event SET local_cleared_at=NOW(), photo_count=0 WHERE id=%s",
+                (event_pk,),
+            )
+            await conn.commit()
+
+
+async def increment_event_counter(event_pk: int, field: str, n: int = 1):
+    """累加相册计数器。field 仅允许白名单列名，避免 SQL 注入。"""
+    if field not in ("view_count", "download_count"):
+        raise ValueError(f"invalid counter field: {field}")
+    if not n:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                f"UPDATE event SET {field} = {field} + %s WHERE id=%s", (n, event_pk)
+            )
             await conn.commit()
 
 
@@ -261,6 +337,52 @@ async def get_tags(event_pk: int):
             return await cur.fetchall()
 
 
+async def count_photos_by_tag(event_pk: int, tag: str, tag_en=None) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            if tag_en is None:
+                await cur.execute(
+                    "SELECT COUNT(*) AS c FROM photo WHERE event_id=%s AND tag=%s",
+                    (event_pk, tag),
+                )
+            else:
+                await cur.execute(
+                    "SELECT COUNT(*) AS c FROM photo WHERE event_id=%s AND tag=%s AND tag_en=%s",
+                    (event_pk, tag, tag_en),
+                )
+            return (await cur.fetchone())["c"]
+
+
+async def rename_event_tag(event_pk: int, old_tag: str, new_tag: str,
+                           new_tag_en=None, old_tag_en=None) -> int:
+    """重命名相册内已有标签。
+
+    标签以字符串冗余存储在 photo 行上（无独立 tag 表），因此改名等价于
+    UPDATE 该相册下所有引用旧标签的照片行——photo.event_id 与 photo.id 均不变，
+    已绑定的照片自动跟随新名称，不会出现解绑/丢图。
+    """
+    if new_tag_en is None:
+        new_tag_en = new_tag
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            if old_tag_en is None:
+                await cur.execute(
+                    "UPDATE photo SET tag=%s, tag_en=%s WHERE event_id=%s AND tag=%s",
+                    (new_tag, new_tag_en, event_pk, old_tag),
+                )
+            else:
+                await cur.execute(
+                    "UPDATE photo SET tag=%s, tag_en=%s "
+                    "WHERE event_id=%s AND tag=%s AND IFNULL(tag_en,'')=%s",
+                    (new_tag, new_tag_en, event_pk, old_tag, old_tag_en or ""),
+                )
+            n = cur.rowcount
+            await conn.commit()
+            return n
+
+
 # ---------- 共享文件（下载中心合并） ----------
 async def create_share_file(file_id: str, original_filename: str, file_size: int,
                             mime_type: str, storage_path: str, oss_key,
@@ -324,12 +446,44 @@ async def update_share_file_token(pk: int, token: str):
             await conn.commit()
 
 
-async def increment_share_file_download(pk: int):
+async def increment_share_file_counter(pk: int, field: str, n: int = 1):
+    """累加共享文件计数器。field 仅允许白名单列名。"""
+    if field not in ("download_count", "view_count"):
+        raise ValueError(f"invalid counter field: {field}")
+    if not n:
+        return
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "UPDATE share_file SET download_count = download_count + 1 WHERE id=%s", (pk,)
+                f"UPDATE share_file SET {field} = {field} + %s WHERE id=%s", (n, pk)
+            )
+            await conn.commit()
+
+
+async def list_expired_share_files(limit: int = 50):
+    """取出已过期且尚未清理的共享文件。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT * FROM share_file WHERE expires_at IS NOT NULL "
+                "AND expires_at <= NOW() AND purged_at IS NULL "
+                "ORDER BY expires_at ASC LIMIT %s",
+                (limit,),
+            )
+            return await cur.fetchall()
+
+
+async def mark_share_file_purged(pk: int):
+    """标记共享文件已清理：清掉存储位置，列表条目保留为空壳。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE share_file SET storage_path='', oss_key=NULL, purged_at=NOW() "
+                "WHERE id=%s",
+                (pk,),
             )
             await conn.commit()
 

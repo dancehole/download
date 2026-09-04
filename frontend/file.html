@@ -203,8 +203,8 @@
     <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2024302719号</a>
   </footer>
 
-  <script src="static/js/i18n.js?v=10"></script>
-  <script src="static/js/api.js?v=10"></script>
+  <script src="static/js/i18n.js?v=13"></script>
+  <script src="static/js/api.js?v=13"></script>
   <script>
   (function () {
     "use strict";
@@ -220,6 +220,8 @@
         label_downloads: "下载次数",
         expire_never: "永不过期",
         expired: "已过期",
+        purged: "已清理",
+        purged_desc: "文件已过期并被自动删除",
         expire_until: "至 {t}",
         download: "下载文件",
         copy: "复制链接",
@@ -237,6 +239,8 @@
         label_downloads: "Downloads",
         expire_never: "Never",
         expired: "Expired",
+        purged: "Cleaned",
+        purged_desc: "File expired and was deleted automatically",
         expire_until: "Until {t}",
         download: "Download File",
         copy: "Copy Link",
@@ -330,7 +334,13 @@
         $("fileDownloads").textContent = String(f.download_count || 0);
 
         var expEl = $("fileExpire");
-        if (f.expired) {
+        if (f.purged) {
+          expEl.textContent = t("purged");
+          expEl.className = "status-expired";
+          expEl.title = t("purged_desc");
+          $("downloadBtn").disabled = true;
+          $("downloadBtn").classList.add("btn-danger");
+        } else if (f.expired) {
           expEl.textContent = t("expired");
           expEl.className = "status-expired";
           $("downloadBtn").disabled = true;

@@ -19,6 +19,13 @@ def _dt(v):
 
 
 def event_to_dict(ev: dict) -> dict:
+    expires_at = ev.get("expires_at")
+    purged_at = ev.get("purged_at")
+    local_cleared_at = ev.get("local_cleared_at")
+    oss_cleared_at = ev.get("oss_cleared_at")
+    now = datetime.now()
+    # 「已清理」综合标记：本地或 OSS 任意一端被清空，即视为已做过清理
+    cleared_at = local_cleared_at or oss_cleared_at or purged_at
     return {
         "event_id": ev["event_id"],
         "event_name": ev["event_name"],
@@ -28,6 +35,20 @@ def event_to_dict(ev: dict) -> dict:
         "preview_size": ev.get("preview_size", 640),
         "use_oss": bool(ev.get("use_oss", True)),
         "created_at": _dt(ev["created_at"]),
+        # 过期时间：None = 永不过期
+        "expires_at": _dt(expires_at),
+        "expires_at_text": expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else None,
+        "expired": bool(expires_at and expires_at <= now),
+        # 清理标记：本地照片已删 / OSS 已清空
+        "local_cleared_at": _dt(local_cleared_at),
+        "local_cleared": bool(local_cleared_at),
+        "oss_cleared_at": _dt(oss_cleared_at),
+        "oss_cleared": bool(oss_cleared_at),
+        # 综合「已清理」标记（用于卡片/详情展示空壳状态）
+        "purged_at": _dt(cleared_at),
+        "purged": bool(cleared_at),
+        "view_count": int(ev.get("view_count") or 0),
+        "download_count": int(ev.get("download_count") or 0),
     }
 
 
@@ -76,6 +97,8 @@ def format_size(size_bytes) -> str:
 
 def share_file_to_dict(f: dict) -> dict:
     """共享文件序列化（管理端与公共端共用）。"""
+    expires_at = f.get("expires_at")
+    purged_at = f.get("purged_at")
     return {
         "file_id": f["file_id"],
         "filename": f["original_filename"],
@@ -86,6 +109,11 @@ def share_file_to_dict(f: dict) -> dict:
         "share_url": f"/share/files/{f['share_token']}",
         "download_url": f"/share/files/{f['share_token']}/download",
         "created_at": _dt(f["created_at"]),
-        "expires_at": _dt(f["expires_at"]),
-        "download_count": f["download_count"],
+        "expires_at": _dt(expires_at),
+        "expires_at_text": expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else None,
+        "expired": bool(expires_at and expires_at < datetime.now()),
+        "purged_at": _dt(purged_at),
+        "purged": bool(purged_at),
+        "download_count": int(f.get("download_count") or 0),
+        "view_count": int(f.get("view_count") or 0),
     }

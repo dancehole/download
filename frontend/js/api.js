@@ -113,10 +113,28 @@
 
     // 活动
     listEvents: function () { return request("/events"); },
-    createEvent: function (name) {
-      return request("/events", { method: "POST", json: { event_name: name } });
+    createEvent: function (name, opts) {
+      opts = opts || {};
+      return request("/events", {
+        method: "POST",
+        json: {
+          event_name: name,
+          preview_size: opts.preview_size || 640,
+          use_oss: opts.use_oss !== false,
+          expires_in_hours: opts.expires_in_hours || 0,
+        },
+      });
     },
     getEvent: function (id) { return request("/events/" + encodeURIComponent(id)); },
+    renameTag: function (id, payload) {
+      return request("/events/" + encodeURIComponent(id) + "/tags", { method: "PUT", json: payload });
+    },
+    clearOss: function (id) {
+      return request("/events/" + encodeURIComponent(id) + "/clear-oss", { method: "POST" });
+    },
+    clearLocal: function (id) {
+      return request("/events/" + encodeURIComponent(id) + "/clear-local", { method: "POST" });
+    },
     regenShare: function (id) {
       return request("/events/" + encodeURIComponent(id) + "/share", { method: "POST" });
     },

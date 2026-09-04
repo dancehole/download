@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/css/admin.css?v=10">
+  <link rel="stylesheet" href="static/css/admin.css?v=13">
 </head>
 <body>
   <!-- 登录 -->
@@ -117,6 +117,7 @@
                   <th data-i18n="file_size">大小</th>
                   <th data-i18n="upload_time">上传时间</th>
                   <th data-i18n="expire">有效期</th>
+                  <th data-i18n="views">访问</th>
                   <th data-i18n="downloads">下载</th>
                   <th data-i18n="operations">操作</th>
                 </tr>
@@ -141,8 +142,15 @@
               <span class="chip mono" id="detailId"></span>
               <span class="chip" id="detailCount"></span>
               <span class="chip" id="detailCreated"></span>
+              <span class="chip" id="detailStats"></span>
+              <span class="chip" id="detailExpire"></span>
             </div>
           </div>
+        </div>
+
+        <div class="notice notice-warn" id="purgedNotice" hidden>
+          <strong id="purgedNoticeTitle"></strong>
+          <p class="muted" id="purgedNoticeDesc"></p>
         </div>
 
         <div class="share-box">
@@ -179,18 +187,36 @@
           </label>
           <p class="muted" data-i18n="event_use_oss_desc">启用后新上传的照片将同时存储到 OSS，需先在全局设置中配置 OSS。</p>
 
+          <label class="field">
+            <span class="field-label" data-i18n="album_expire">相册过期时间</span>
+            <select id="eventExpireSelect" class="input">
+              <option value="keep" data-i18n="album_expire_keep">保持当前设置（不修改）</option>
+              <option value="0" data-i18n="expire_never">永不过期</option>
+              <option value="72" data-i18n="expire_72h">3 天</option>
+              <option value="168" data-i18n="expire_168h">7 天</option>
+              <option value="336" data-i18n="expire_336h">14 天</option>
+              <option value="720" data-i18n="expire_720h">30 天</option>
+            </select>
+            <p class="muted" data-i18n="album_expire_desc">到期后不会自动删除文件；管理员可在后台手动清理（清空 OSS / 删除本地照片 / 删除整个相册）。到期前可随时续期。</p>
+          </label>
+
           <button class="btn btn-primary block" id="saveEventSettingsBtn" type="button" data-i18n="save">保存设置</button>
         </div>
 
         <div class="danger-zone">
           <div class="danger-zone-text">
-            <h3 data-i18n="delete_album">删除相册</h3>
-            <p class="muted" data-i18n="delete_album_desc">永久删除该相册的所有照片、本地文件和 OSS 远程数据，不可恢复。</p>
+            <h3 data-i18n="cleanup_title">空间与清理</h3>
+            <p class="muted" id="storageInfo"></p>
+            <p class="muted" data-i18n="cleanup_desc">过期相册不会自动删除文件。可手动释放空间：清空 OSS、删除本地照片，或彻底删除整个相册。</p>
           </div>
-          <button class="btn btn-danger" id="deleteAlbumBtn" type="button" data-i18n="delete_album">删除相册</button>
+          <div class="cleanup-actions">
+            <button class="btn btn-ghost" id="clearOssBtn" type="button" data-i18n="clear_oss_btn">清空 OSS 存储释放空间</button>
+            <button class="btn btn-ghost" id="clearLocalBtn" type="button" data-i18n="clear_local_btn">删除本地照片释放空间</button>
+            <button class="btn btn-danger" id="deleteAlbumBtn" type="button" data-i18n="delete_album_full">删除整个相册（空间和记录都清空）</button>
+          </div>
         </div>
 
-        <div class="upload-grid">
+        <div class="upload-grid" id="uploadZone">
           <div class="upload-card">
             <h3 data-i18n="upload_photos">上传照片</h3>
             <label class="field">
@@ -346,7 +372,40 @@
           <span class="field-label" data-i18n="event_name">活动主题</span>
           <input type="text" id="albumNameInput" class="input" data-i18n-ph="event_name_ph" placeholder="请输入活动主题">
         </label>
+        <label class="field">
+          <span class="field-label" data-i18n="album_expire">相册过期时间</span>
+          <select id="albumExpireSelect" class="input">
+            <option value="0" data-i18n="expire_never">永不过期</option>
+            <option value="72" data-i18n="expire_72h">3 天</option>
+            <option value="168" data-i18n="expire_168h">7 天</option>
+            <option value="336" data-i18n="expire_336h">14 天</option>
+            <option value="720" data-i18n="expire_720h">30 天</option>
+          </select>
+          <p class="muted" data-i18n="album_expire_desc">到期后不会自动删除文件；管理员可在后台手动清理（清空 OSS / 删除本地照片 / 删除整个相册）。到期前可随时续期。</p>
+        </label>
         <button class="btn btn-primary block" id="albumNameConfirm" type="button" data-i18n="create">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签重命名弹窗 -->
+  <div class="modal-mask" id="tagRenameModal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2 data-i18n="rename_tag">重命名标签</h2>
+        <button class="modal-close" id="tagRenameClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" id="tagRenameHint"></p>
+        <label class="field">
+          <span class="field-label" data-i18n="tag_zh_new">中文标签</span>
+          <input type="text" id="tagRenameZh" class="input" maxlength="64" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label" data-i18n="tag_en_new">英文标签（可留空，缺省同中文）</span>
+          <input type="text" id="tagRenameEn" class="input" maxlength="64" autocomplete="off">
+        </label>
+        <button class="btn btn-primary block" id="tagRenameConfirm" type="button" data-i18n="save">保存</button>
       </div>
     </div>
   </div>
@@ -373,8 +432,8 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script src="static/js/i18n.js?v=11"></script>
-  <script src="static/js/api.js?v=11"></script>
-  <script src="static/js/admin.js?v=11"></script>
+  <script src="static/js/i18n.js?v=13"></script>
+  <script src="static/js/api.js?v=13"></script>
+  <script src="static/js/admin.js?v=13"></script>
 </body>
 </html>
