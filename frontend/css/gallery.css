@@ -156,6 +156,22 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ===== 照片流 ===== */
 .stream-wrap { max-width: 1200px; margin: 0 auto; padding: 14px 10px 60px; }
+
+/* 相册已过期 / 已清理提示 */
+.album-expired-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(217, 101, 101, 0.1);
+  border: 1px solid rgba(217, 101, 101, 0.35);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.album-expired-banner strong { font-size: 14px; color: var(--danger); }
+.album-expired-banner span { color: var(--text-dim); }
 .stream {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

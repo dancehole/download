@@ -10,6 +10,7 @@
     jpgFiles: [],
     rafFiles: [],
     pickedFile: null,
+    renameTag: null,   // 当前正在重命名的标签 {tag, tag_en, count}
   };
 
   function toast(msg, type) {
@@ -117,8 +118,11 @@
     const orig = btn.textContent;
     btn.textContent = I18N.t("saving");
     try {
-      await API.createEvent(name);
+      await API.createEvent(name, {
+        expires_in_hours: parseInt($("albumExpireSelect").value, 10) || 0,
+      });
       $("albumNameInput").value = "";
+      $("albumExpireSelect").value = "0";
       closeAlbumNameModal();
       toast(I18N.t("create_event") + " ✓", "ok");
       showView("viewEvents");
@@ -128,6 +132,35 @@
     } finally {
       btn.disabled = false;
       btn.textContent = orig;
+    }
+  }
+
+  // ===== 空间清理（手动）=====
+  async function clearOss() {
+    if (!state.currentEvent) return;
+    if (!confirm(I18N.t("clear_oss_confirm"))) return;
+    try {
+      await API.clearOss(state.currentEvent.event_id);
+      toast(I18N.t("clear_oss_success"), "ok");
+      state.currentEvent = await API.getEvent(state.currentEvent.event_id);
+      renderDetail();
+      await loadThumbs();   // OSS key 已清空，刷新缩略图走本地回退
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  async function clearLocal() {
+    if (!state.currentEvent) return;
+    if (!confirm(I18N.t("clear_local_confirm"))) return;
+    try {
+      const r = await API.clearLocal(state.currentEvent.event_id);
+      toast(I18N.t("clear_local_success", { size: (r && r.freed_text) || "" }), "ok");
+      state.currentEvent = await API.getEvent(state.currentEvent.event_id);
+      renderDetail();
+      await loadThumbs();   // 照片行已清空，列表显示「暂无照片」
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
     }
   }
 
@@ -151,6 +184,20 @@
     }
   }
 
+  // 相册卡片上的有效期状态：已清理 > 已过期 > 具体时间 > 永不过期
+  function expireChipHtml(ev) {
+    if (ev.purged) {
+      return `<span class="chip chip-danger">${I18N.t("album_purged")}</span>`;
+    }
+    if (ev.expired) {
+      return `<span class="chip chip-warn">${I18N.t("expired")}</span>`;
+    }
+    if (ev.expires_at_text) {
+      return `<span class="chip chip-soft">${I18N.t("expire")} ${escapeHtml(ev.expires_at_text)}</span>`;
+    }
+    return `<span class="chip chip-soft">${I18N.t("expire_never")}</span>`;
+  }
+
   function renderEvents() {
     const grid = $("eventsGrid");
     if (state.events.length === 0) {
@@ -158,11 +205,15 @@
       return;
     }
     grid.innerHTML = state.events.map((ev) => `
-      <div class="event-card" data-id="${escapeHtml(ev.event_id)}">
+      <div class="event-card ${ev.purged ? "is-purged" : ""}" data-id="${escapeHtml(ev.event_id)}">
         <h3>${escapeHtml(ev.event_name)}</h3>
         <div class="meta">
           <span class="chip mono">ID: ${escapeHtml(ev.event_id)}</span>
           <span class="chip">${I18N.t("photos_count", { n: ev.photo_count })}</span>
+          ${expireChipHtml(ev)}
+        </div>
+        <div class="meta">
+          <span class="chip chip-stat">${I18N.t("stat_combined", { v: ev.view_count || 0, d: ev.download_count || 0 })}</span>
         </div>
         <div class="actions">
           <button class="btn btn-primary sm" data-act="enter" data-id="${escapeHtml(ev.event_id)}">${I18N.t("enter_event")}</button>
@@ -215,7 +266,8 @@
           <td class="fmeta">${escapeHtml(f.file_size_text)}</td>
           <td class="fmeta">${escapeHtml(f.created_at || "")}</td>
           <td class="fmeta">${expHtml}</td>
-          <td class="fmeta">${f.download_count}</td>
+          <td class="fmeta">${f.view_count || 0}</td>
+          <td class="fmeta">${f.download_count || 0}</td>
           <td class="fops">
             <button class="action-btn copy-btn" data-act="copy" data-token="${escapeHtml(f.share_token)}">${I18N.t("copy_link")}</button>
             <button class="action-btn open-btn" data-act="open" data-token="${escapeHtml(f.share_token)}">${I18N.t("open_share")}</button>
@@ -338,9 +390,53 @@
     $("detailId").textContent = "ID: " + ev.event_id;
     $("detailCount").textContent = I18N.t("photos_count", { n: ev.photo_count });
     $("detailCreated").textContent = I18N.t("created_at") + ": " + (ev.created_at || "");
+    $("detailStats").textContent = I18N.t("stat_combined", {
+      v: ev.view_count || 0, d: ev.download_count || 0,
+    });
+    $("detailExpire").textContent = ev.expires_at_text
+      ? I18N.t("expire") + " " + ev.expires_at_text
+      : I18N.t("expire_never");
+    $("detailExpire").className = "chip" + (ev.purged ? " chip-danger" : (ev.expired ? " chip-warn" : " chip-soft"));
+
+    // 空间占用提示（提醒“文件占用 xx 空间”）
+    const storageEl = $("storageInfo");
+    if (ev.local_cleared) {
+      storageEl.textContent = I18N.t("storage_local_cleared");
+    } else if (ev.oss_cleared) {
+      storageEl.textContent = I18N.t("storage_oss_cleared", { size: ev.storage_size_text || I18N.t("storage_none") });
+    } else if (ev.storage_size) {
+      storageEl.textContent = I18N.t("storage_occupied", { size: ev.storage_size_text });
+    } else {
+      storageEl.textContent = I18N.t("storage_none");
+    }
+
+    // 已清理提示（本地照片已删 / OSS 已清空）
+    const notice = $("purgedNotice");
+    if (ev.local_cleared) {
+      $("purgedNoticeTitle").textContent = I18N.t("cleaned_local_title");
+      $("purgedNoticeDesc").textContent = I18N.t("cleaned_local_desc");
+      notice.hidden = false;
+    } else if (ev.oss_cleared) {
+      $("purgedNoticeTitle").textContent = I18N.t("cleaned_oss_title");
+      $("purgedNoticeDesc").textContent = I18N.t("cleaned_oss_desc");
+      notice.hidden = false;
+    } else {
+      notice.hidden = true;
+    }
+
+    // 已清理的部分禁用对应按钮，避免重复操作
+    $("clearOssBtn").disabled = !!ev.oss_cleared;
+    $("clearLocalBtn").disabled = !!ev.local_cleared;
+
+    // 本地照片已删 → 相册为空壳，隐藏上传区（提示见 purgedNotice，需删相册重建）
+    $("uploadZone").style.display = ev.local_cleared ? "none" : "";
+
     $("shareLink").value = location.origin + API.getAutoPrefix() + "/share/" + ev.share_token;
     $("previewSizeSelect").value = ev.preview_size || 640;
     $("eventUseOss").checked = ev.use_oss !== false;
+    // 默认「保持当前设置」，避免保存其他设置时误改过期时间
+    $("eventExpireSelect").value = "keep";
+    $("eventExpireSelect").disabled = !!ev.purged;
     populateTagSuggestions(ev);
   }
 
@@ -359,11 +455,14 @@
     }
     chips.innerHTML = tags.map((t) => {
       const en = t.tag_en || t.tag;
-      return `<button type="button" class="tag-chip" data-zh="${escapeHtml(t.tag)}" data-en="${escapeHtml(en)}" title="${escapeHtml(t.tag)} / ${escapeHtml(en)}">
-        <span class="tag-chip-zh">${escapeHtml(t.tag)}</span>
-        <span class="tag-chip-en">${escapeHtml(en)}</span>
-        <em>${t.count}</em>
-      </button>`;
+      return `<span class="tag-chip-item">
+        <button type="button" class="tag-chip" data-zh="${escapeHtml(t.tag)}" data-en="${escapeHtml(en)}" title="${escapeHtml(t.tag)} / ${escapeHtml(en)}">
+          <span class="tag-chip-zh">${escapeHtml(t.tag)}</span>
+          <span class="tag-chip-en">${escapeHtml(en)}</span>
+          <em>${t.count}</em>
+        </button>
+        <button type="button" class="tag-chip-edit" data-zh="${escapeHtml(t.tag)}" data-en="${escapeHtml(en)}" data-count="${t.count}" title="${I18N.t("rename_tag")}" aria-label="${I18N.t("rename_tag")}">✎</button>
+      </span>`;
     }).join("");
     $("tagSuggest").hidden = false;
     chips.querySelectorAll(".tag-chip").forEach((b) => {
@@ -372,6 +471,65 @@
         $("uploadTagEn").value = b.dataset.en;
       });
     });
+    chips.querySelectorAll(".tag-chip-edit").forEach((b) => {
+      b.addEventListener("click", () => {
+        openRenameTag(b.dataset.zh, b.dataset.en, parseInt(b.dataset.count, 10) || 0);
+      });
+    });
+  }
+
+  // ===== 标签重命名 =====
+  function openRenameTag(zh, en, count) {
+    state.renameTag = { tag: zh, tag_en: en, count: count };
+    $("tagRenameHint").textContent = I18N.t("rename_tag_hint", { tag: zh, n: count });
+    $("tagRenameZh").value = zh;
+    $("tagRenameEn").value = en || zh;
+    $("tagRenameModal").hidden = false;
+    setTimeout(() => { $("tagRenameZh").focus(); $("tagRenameZh").select(); }, 50);
+  }
+  function closeRenameTag() {
+    $("tagRenameModal").hidden = true;
+    state.renameTag = null;
+  }
+
+  async function confirmRenameTag() {
+    const cur = state.renameTag;
+    if (!cur || !state.currentEvent) return;
+    const newZh = $("tagRenameZh").value.trim();
+    const newEn = $("tagRenameEn").value.trim();
+    if (!newZh) { toast(I18N.t("rename_tag_empty"), "err"); return; }
+    if (newZh === cur.tag && (newEn || cur.tag) === (cur.tag_en || cur.tag)) {
+      toast(I18N.t("rename_tag_same"), "err");
+      return;
+    }
+
+    // 目标名称已存在 → 合并，需二次确认
+    const known = (state.currentEvent.tags || []).find((t) => t.tag === newZh && t.tag !== cur.tag);
+    if (known && !confirm(I18N.t("rename_tag_merge_confirm", { tag: newZh, n: known.count }))) return;
+
+    const btn = $("tagRenameConfirm");
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = I18N.t("saving");
+    try {
+      const data = await API.renameTag(state.currentEvent.event_id, {
+        old_tag: cur.tag,
+        old_tag_en: cur.tag_en || "",
+        new_tag: newZh,
+        new_tag_en: newEn,
+      });
+      closeRenameTag();
+      toast(I18N.t("rename_tag_success", { n: data.affected }), "ok");
+      // 用服务端返回的标签列表刷新，保证计数准确
+      state.currentEvent = await API.getEvent(state.currentEvent.event_id);
+      renderDetail();
+      await loadThumbs();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("rename_tag_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
   }
 
   // 输入时中英文配对自动补全：中文命中已有标签且英文框为空 → 自动补英文；反之亦然
@@ -397,6 +555,11 @@
   async function loadThumbs() {
     const grid = $("thumbGrid");
     grid.innerHTML = `<div class="loading-inline">${I18N.t("loading")}</div>`;
+    // 已清空（本地照片已删）的相册没有照片，公共接口会返回 410，直接显示空态
+    if (state.currentEvent && state.currentEvent.photo_count === 0) {
+      grid.innerHTML = `<div class="empty">${I18N.t("no_photos")}</div>`;
+      return;
+    }
     try {
       const data = await API.sharePhotos(state.currentEvent.share_token, { size: 100 });
       const photos = data.photos || [];
@@ -458,6 +621,8 @@
         preview_size: parseInt($("previewSizeSelect").value),
         use_oss: $("eventUseOss").checked,
       };
+      const expiry = $("eventExpireSelect").value;
+      if (expiry !== "keep") settings.expires_in_hours = parseInt(expiry, 10) || 0;
       const data = await API.updateEventSettings(state.currentEvent.event_id, settings);
       state.currentEvent = data;
       renderDetail();
@@ -767,6 +932,13 @@
     $("albumNameConfirm").addEventListener("click", confirmCreateAlbum);
     $("albumNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmCreateAlbum(); });
 
+    // 标签重命名弹窗
+    $("tagRenameClose").addEventListener("click", closeRenameTag);
+    $("tagRenameModal").addEventListener("click", (e) => { if (e.target === $("tagRenameModal")) closeRenameTag(); });
+    $("tagRenameConfirm").addEventListener("click", confirmRenameTag);
+    $("tagRenameZh").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmRenameTag(); });
+    $("tagRenameEn").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmRenameTag(); });
+
     $("enterBtn").addEventListener("click", enterById);
     $("enterId").addEventListener("keydown", (e) => { if (e.key === "Enter") enterById(); });
 
@@ -786,6 +958,8 @@
       deleteEvent(state.currentEvent.event_id, state.currentEvent.event_name);
     });
     $("saveEventSettingsBtn").addEventListener("click", saveEventSettings);
+    $("clearOssBtn").addEventListener("click", clearOss);
+    $("clearLocalBtn").addEventListener("click", clearLocal);
 
     setupDropzone("dropzoneJpg", "jpgInput", "jpgFiles", "jpg");
     setupDropzone("dropzoneRaf", "rafInput", "rafFiles", "raf");

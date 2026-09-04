@@ -408,9 +408,12 @@
       const ev = await API.shareInfo(TOKEN);
       state.event = ev;
       applyI18n();
+      // 仅当本地照片已被手动清理（local_cleared）才拦截分享页；
+      // 仅过期的相册仍可正常浏览，文件不会自动删除。
       await loadPhotos(true);
     } catch (e) {
-      stream.innerHTML = `<div class="empty-state"><div class="icon">⚠</div>${I18N.t("link_invalid")}</div>`;
+      const msg = (e && e.msg) ? e.msg : I18N.t("link_invalid");
+      stream.innerHTML = `<div class="empty-state"><div class="icon">⚠</div>${escapeHtml(msg)}</div>`;
     }
   }
 

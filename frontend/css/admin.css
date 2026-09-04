@@ -200,7 +200,28 @@ input { font-family: inherit; }
   border-radius: 999px;
 }
 .chip.mono { font-family: ui-monospace, monospace; }
+/* 过期状态 chips */
+.chip-soft { background: var(--surface-2); color: var(--text-dim); }
+.chip-warn { background: rgba(192, 80, 77, 0.08); border-color: rgba(192, 80, 77, 0.35); color: var(--danger); }
+.chip-danger { background: rgba(192, 80, 77, 0.14); border-color: rgba(192, 80, 77, 0.5); color: var(--danger); font-weight: 600; }
+.chip-stat { background: var(--accent-soft); border-color: rgba(184, 137, 63, 0.3); color: var(--accent-dim); }
+.event-card.is-purged { border-style: dashed; }
+.event-card.is-purged h3 { color: var(--text-dim); }
 .event-card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 详情顶部提示条（已清理等） */
+.notice {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.notice strong { display: block; font-size: 13px; margin-bottom: 4px; }
+.notice p { margin: 0; }
+.notice-warn { border-left-color: var(--danger); background: rgba(192, 80, 77, 0.05); }
+.notice-warn strong { color: var(--danger); }
 
 .empty {
   text-align: center;
@@ -286,6 +307,25 @@ input { font-family: inherit; }
   padding: 0 6px;
   font-size: 11px;
   line-height: 16px;
+}
+/* 标签重命名按钮 */
+.tag-chip-item { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+.tag-chip-edit {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none;
+  width: 26px; height: 26px; padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px; line-height: 1;
+  color: var(--text-faint);
+  transition: all 0.15s;
+}
+.tag-chip-edit:hover, .tag-chip-edit:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
 }
 
 .dropzone {
@@ -431,9 +471,18 @@ input { font-family: inherit; }
   margin: 0 0 4px;
   color: var(--danger);
 }
-.danger-zone-text .muted { margin: 0; }
+.danger-zone-text .muted { margin: 4px 0 0; }
+.cleanup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: 420px;
+}
 @media (max-width: 560px) {
   .danger-zone { flex-direction: column; align-items: stretch; }
+  .cleanup-actions { max-width: none; justify-content: stretch; }
+  .cleanup-actions .btn { width: 100%; }
 }
 
 /* ===== 导航高亮 ===== */
