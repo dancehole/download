@@ -31,6 +31,16 @@ IMAGE_PROCESS_CONCURRENCY = 2   # 并发压缩数限制，避免内存峰值
 MAX_UPLOAD_SIZE_MB = 50         # 单文件上限（照片）
 FILE_MAX_UPLOAD_SIZE_MB = int(os.getenv("FILE_MAX_UPLOAD_SIZE_MB", "500"))  # 共享文件上限
 
+# ── 过期与清理（相册 / 共享文件）──────────────────────────
+# 注意：过期后 **不会** 自动删除文件。文件释放由管理员在后台手动触发
+# （清空 OSS / 删除本地照片 / 删除整个相册）。新建相册过期时间上限 30 天。
+
+# ── 计数器（访问 / 下载次数）──────────────────────────────
+# 增量在内存（或 Redis）中累计，每 N 秒批量落库一次，避免高频访问打爆 MySQL
+COUNTER_FLUSH_SECONDS = int(os.getenv("COUNTER_FLUSH_SECONDS", "10"))
+# 可选：配置后计数增量存入 Redis（多进程部署时各进程共享），留空则用进程内内存
+REDIS_URL = os.getenv("REDIS_URL", "")
+
 # 默认摄影师账号（启动时若不存在则自动创建）
 DEFAULT_ADMIN_USER = os.getenv("DEFAULT_ADMIN_USER", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")

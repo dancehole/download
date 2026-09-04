@@ -10,7 +10,7 @@ from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR, APP_PREFIX
 from .db import init_db, close_pool
 from .routers import auth, events, upload, share, files as files_router, settings as settings_router
 from .response import ok
-from . import oss_service
+from . import oss_service, counter_store
 from .models import get_setting
 
 
@@ -37,7 +37,12 @@ async def lifespan(app: FastAPI):
         oss_cfg["enabled"] = str(oss_cfg["enabled"]).lower() in ("1", "true", "yes")
     oss_service.init_oss(oss_cfg)
 
+    # 后台常驻任务：计数批量落库
+    await counter_store.start()
+
     yield
+
+    await counter_store.stop()   # 退出前把残留计数刷进数据库
     await close_pool()
 
 

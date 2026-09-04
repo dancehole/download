@@ -8,3 +8,5 @@ python-multipart>=0.0.9
 python-dotenv>=1.0
 oss2>=2.19
 cryptography>=41.0
+# 可选：配置 REDIS_URL 后，访问/下载计数增量改存 Redis（多进程部署时需要）
+# redis>=5.0

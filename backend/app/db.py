@@ -138,11 +138,49 @@ async def init_db():
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     expires_at DATETIME DEFAULT NULL,
                     download_count INT NOT NULL DEFAULT 0,
+                    view_count INT NOT NULL DEFAULT 0,
+                    purged_at DATETIME DEFAULT NULL,
                     INDEX idx_created_by (created_by),
                     CONSTRAINT fk_sharefile_photographer
                         FOREIGN KEY (created_by) REFERENCES photographer(id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
+
+            # 兼容已存在的数据库：event 的过期清理与计数字段
+            for col_def in [
+                "ADD COLUMN expires_at DATETIME DEFAULT NULL AFTER use_oss",
+                "ADD COLUMN purged_at DATETIME DEFAULT NULL AFTER expires_at",
+                "ADD COLUMN local_cleared_at DATETIME DEFAULT NULL AFTER purged_at",
+                "ADD COLUMN oss_cleared_at DATETIME DEFAULT NULL AFTER local_cleared_at",
+                "ADD COLUMN view_count INT NOT NULL DEFAULT 0 AFTER oss_cleared_at",
+                "ADD COLUMN download_count INT NOT NULL DEFAULT 0 AFTER view_count",
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE event {col_def}")
+                except Exception:
+                    pass
+
+            # 兼容已存在的数据库：share_file 的访问次数与清理标记
+            for col_def in [
+                "ADD COLUMN view_count INT NOT NULL DEFAULT 0 AFTER download_count",
+                "ADD COLUMN purged_at DATETIME DEFAULT NULL AFTER view_count",
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE share_file {col_def}")
+                except Exception:
+                    pass
+
+            # 加速过期扫描
+            for idx_sql, idx_name in [
+                ("ALTER TABLE event ADD INDEX idx_event_expiry (expires_at, purged_at)",
+                 "idx_event_expiry"),
+                ("ALTER TABLE share_file ADD INDEX idx_sharefile_expiry (expires_at, purged_at)",
+                 "idx_sharefile_expiry"),
+            ]:
+                try:
+                    await cur.execute(idx_sql)
+                except Exception:
+                    pass  # 索引已存在
         await conn.commit()
 
     # 确保默认摄影师存在

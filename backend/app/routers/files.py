@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 from ..auth import current_photographer
-from .. import models, oss_service
+from .. import models, oss_service, counter_store
 from ..config import FILES_DIR, FILE_MAX_UPLOAD_SIZE_MB
 from ..response import ok, fail, share_file_to_dict
 
@@ -94,15 +94,10 @@ async def upload_share_file(
 
 @router.get("/files")
 async def list_share_files(user: dict = Depends(current_photographer)):
+    # 计数落库，保证后台看到的是最新数字
+    await counter_store.flush()
     rows = await models.list_share_files_by_user(user["pid"])
-    now = datetime.now()
-    data = []
-    for r in rows:
-        d = share_file_to_dict(r)
-        d["expired"] = bool(r["expires_at"] and r["expires_at"] < now)
-        d["expires_at_text"] = r["expires_at"].strftime("%Y-%m-%d %H:%M") if r["expires_at"] else None
-        data.append(d)
-    return ok(data)
+    return ok([share_file_to_dict(r) for r in rows])
 
 
 @router.post("/files/{file_id}/share")
@@ -146,14 +141,12 @@ async def delete_share_file(file_id: str, user: dict = Depends(current_photograp
 
 @router.get("/share/files/{token}")
 async def share_file_info(token: str):
+    """打开共享文件页时调用，累计一次访问。"""
     f = await models.get_share_file_by_token(token)
     if not f:
         return fail(404, "文件不存在或链接已失效")
-    data = share_file_to_dict(f)
-    now = datetime.now()
-    data["expired"] = bool(f["expires_at"] and f["expires_at"] < now)
-    data["expires_at_text"] = f["expires_at"].strftime("%Y-%m-%d %H:%M") if f["expires_at"] else None
-    return ok(data)
+    await counter_store.incr("sf", f["id"], "view")
+    return ok(share_file_to_dict(f))
 
 
 @router.get("/share/files/{token}/download")
@@ -164,8 +157,10 @@ async def share_file_download(token: str):
         return fail(404, "文件不存在或链接已失效")
     if f["expires_at"] and f["expires_at"] < datetime.now():
         return fail(410, "文件链接已过期")
+    if f.get("purged_at"):
+        return fail(410, "文件已过期并被自动清理")
 
-    await models.increment_share_file_download(f["id"])
+    await counter_store.incr("sf", f["id"], "dl")
 
     if oss_service.is_enabled() and f.get("oss_key"):
         url = oss_service.sign_download_url(f["oss_key"], f["original_filename"])
