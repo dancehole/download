@@ -72,6 +72,10 @@ async def upload_photos(
                 pass
 
     results = []
+    # 幂等去重：先查出本活动已存在的文件名，防止「客户端断开→前端重试」导致重复入库
+    existing = await models.get_existing_filenames(
+        ev["id"], [f.filename for f in files]
+    )
     for f in files:
         entry = {"filename": f.filename, "status": "ok", "error": None}
         ext = os.path.splitext(f.filename)[1].lower()
@@ -79,6 +83,12 @@ async def upload_photos(
             # 非 JPG（如 iPhone HEIC、PNG）直接标记跳过，让前端明确告知用户
             entry["status"] = "skipped"
             entry["error"] = "非 JPG 格式，已跳过"
+            results.append(entry)
+            continue
+        if f.filename in existing:
+            # 同活动同名文件已存在 → 重试/重复上传，跳过避免二次入库
+            entry["status"] = "skipped"
+            entry["error"] = "已存在（可能由断线重试导致），已跳过"
             results.append(entry)
             continue
 
@@ -95,16 +105,15 @@ async def upload_photos(
             oss_preview_key = None
             if use_oss:
                 event_folder = ev["event_id"]
-                oss_original_key = f"{event_folder}/original/{safe}"
+                # 2026-08 优化：原图只存本地，OSS 仅镜像预览图。
+                # 原图 8MB 镜像 OSS 是上传慢的主因（3M 带宽下每张多耗 ~20s），
+                # 预览图仅 ~50KB，OSS 用于分享页加速即可。
                 oss_preview_key = f"{event_folder}/preview/{prev_uuid}.jpg"
                 try:
-                    with open(orig_path, "rb") as fp:
-                        oss_service.upload_fileobj(fp, oss_original_key, "image/jpeg")
                     with open(prev_path, "rb") as fp:
                         oss_service.upload_fileobj(fp, oss_preview_key, "image/jpeg")
                 except Exception:
                     # OSS 不可用（如 Bucket 缺失/网络异常）时降级为本地存储
-                    oss_original_key = None
                     oss_preview_key = None
 
             # 若 raf 目录已存在同名 RAF，则关联

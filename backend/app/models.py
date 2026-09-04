@@ -155,6 +155,22 @@ async def get_photo_by_id(photo_id: int):
             return await cur.fetchone()
 
 
+async def get_existing_filenames(event_pk: int, filenames: list) -> set:
+    """查询该活动下已存在的原始文件名集合，用于上传幂等去重。"""
+    if not filenames:
+        return set()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT filename FROM photo WHERE event_id=%s AND filename IN (%s)"
+                % ("%s", ",".join(["%s"] * len(filenames))),
+                (event_pk, *filenames),
+            )
+            rows = await cur.fetchall()
+            return {r["filename"] for r in rows}
+
+
 async def list_photos(event_pk: int, tag=None, page=1, size=30):
     offset = (page - 1) * size
     pool = await get_pool()
