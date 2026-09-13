@@ -184,6 +184,27 @@
       return request("/share/files/" + encodeURIComponent(token));
     },
 
+    // 账号与相册授权（仅超级管理员；角色与授权以数据库实时状态为准）
+    listUsers: function () { return request("/users"); },
+    createUser: function (payload) { return request("/users", { method: "POST", json: payload }); },
+    resetUserPassword: function (pid) { return request("/users/" + pid + "/password", { method: "PUT", json: {} }); },
+    setUserAlbums: function (pid, eventIds) {
+      return request("/users/" + pid + "/albums", { method: "PUT", json: { event_ids: eventIds || [] } });
+    },
+    grantAlbum: function (pid, eventId) {
+      return request("/users/" + pid + "/albums/" + encodeURIComponent(eventId), { method: "POST" });
+    },
+    revokeAlbum: function (pid, eventId) {
+      return request("/users/" + pid + "/albums/" + encodeURIComponent(eventId), { method: "DELETE" });
+    },
+    setUserActive: function (pid, active) {
+      return request("/users/" + pid + "/active", { method: "PUT", json: { active: !!active } });
+    },
+    setUserRole: function (pid, role) {
+      return request("/users/" + pid + "/role", { method: "PUT", json: { role: role } });
+    },
+    deleteUser: function (pid) { return request("/users/" + pid, { method: "DELETE" }); },
+
     // 公开访问
     shareInfo: function (token) { return request("/share/" + encodeURIComponent(token)); },
     sharePhotos: function (token, opts) {

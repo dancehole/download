@@ -66,13 +66,18 @@ class CDP {
     return r.result ? r.result.value : undefined;
   }
 }
-async function waitFor(cdp, expr, timeoutMs = 20000) {
+async function waitFor(cdp, expr, timeoutMs = 15000) {
   const t0 = Date.now(); let last;
   while (Date.now() - t0 < timeoutMs) {
-    last = await cdp.eval(expr); if (last) return last; await sleep(250);
+    try {
+      last = await cdp.eval(expr);
+      if (last) return last;
+    } catch (e) { last = "(pending)"; }
+    await sleep(250);
   }
   throw new Error("waitFor timeout: " + expr + " last=" + JSON.stringify(last));
 }
+
 const results = [];
 function check(name, ok, detail) {
   results.push(!!ok); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail !== undefined ? "  | " + detail : ""}`);

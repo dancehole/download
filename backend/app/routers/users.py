@@ -12,6 +12,7 @@
 """
 import re
 import secrets
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -62,21 +63,25 @@ async def _user_dict(row: dict) -> dict:
 
 class UserIn(BaseModel):
     username: str
-    password: str = None          # 不传则自动生成
-    role: str = ALBUM             # album | super
-    event_ids: list = []          # 授权相册（event_id 字符串列表）
+    password: Optional[str] = None   # 不传或传 null 则自动生成
+    role: str = ALBUM                # album | super
+    event_ids: List[str] = []        # 授权相册（event_id 字符串列表）
 
 
 class PasswordIn(BaseModel):
-    password: str = None          # 不传则自动生成
+    password: Optional[str] = None   # 不传或传 null 则自动生成
 
 
 class AlbumsIn(BaseModel):
-    event_ids: list = []
+    event_ids: List[str] = []
 
 
 class ActiveIn(BaseModel):
     active: bool = True
+
+
+class RoleIn(BaseModel):
+    role: str = ALBUM           # album | super
 
 
 @router.get("/users")
@@ -193,7 +198,7 @@ async def set_user_active(pid: int, body: ActiveIn, user: dict = Depends(current
 
 
 @router.put("/users/{pid}/role")
-async def set_user_role(pid: int, body: UserIn, user: dict = Depends(current_super)):
+async def set_user_role(pid: int, body: RoleIn, user: dict = Depends(current_super)):
     """调整角色（super ↔ album）。降级超级管理员时保证仍有可用超管。"""
     role = (body.role or "").strip()
     if role not in ROLES:

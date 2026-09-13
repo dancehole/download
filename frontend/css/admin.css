@@ -686,3 +686,61 @@ input { font-family: inherit; }
 }
 .site-footer a { color: var(--text-faint); text-decoration: none; }
 .site-footer a:hover { color: var(--accent); }
+
+/* ===== 账号与权限（2026-09-14 需求3） ===== */
+.who { font-size: 12px; color: var(--text-dim); margin-right: 10px; white-space: nowrap; }
+.edit-btn { background: var(--surface-2); color: var(--text-dim); border-color: var(--border); }
+.edit-btn:hover { color: var(--text); }
+
+.chip-role-super {
+  background: rgba(184, 137, 63, 0.12);
+  border-color: rgba(184, 137, 63, 0.42);
+  color: var(--accent-dim); font-weight: 600;
+}
+.chip-role-album {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #2563eb; font-weight: 600;
+}
+.users-table .user-albums { max-width: 320px; }
+.users-table .user-albums .chip { margin: 2px 3px 2px 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+
+/* 相册勾选框（新建账号 / 编辑授权） */
+.album-picker {
+  margin-top: 8px; max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.album-option {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.album-option:hover { background: rgba(0, 0, 0, 0.04); }
+.album-option input { flex: none; }
+.album-option-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-option em { font-style: normal; font-size: 11px; color: var(--text-faint); flex: none; }
+
+/* 相册详情：相册管理员区块 */
+.admins-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+.admin-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 6px 5px 12px; border-radius: 999px;
+  background: var(--accent-soft); border: 1px solid rgba(184, 137, 63, 0.3);
+  color: var(--accent-dim); font-size: 13px; font-weight: 600;
+}
+.admin-chip.is-off { background: var(--surface-2); border-color: var(--border); color: var(--text-faint); }
+.admin-chip em { font-style: normal; font-size: 11px; font-weight: 500; }
+.admin-remove {
+  border: none; background: rgba(0, 0, 0, 0.06); color: inherit;
+  width: 20px; height: 20px; border-radius: 50%; line-height: 1; font-size: 11px;
+}
+.admin-remove:hover { background: rgba(192, 80, 77, 0.18); color: var(--danger); }
+.admin-add-grid { display: flex; flex-direction: column; gap: 10px; }
+.admin-add-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.admin-add-row .input { flex: 1; min-width: 180px; }
+.admin-add-row .btn { flex: none; }
+@media (max-width: 640px) {
+  .admin-add-row .btn { width: 100%; }
+  .users-table .user-albums { max-width: none; }
+}

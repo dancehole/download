@@ -11,7 +11,14 @@
     rafFiles: [],
     pickedFile: null,
     renameTag: null,   // 当前正在重命名的标签 {tag, tag_en, count}
+    me: null,          // 当前登录账号 {photographer_id, username, role, is_super}
+    users: [],         // 账号列表（仅超级管理员加载）
+    editUser: null,    // 正在编辑授权相册的账号
   };
+
+  function isSuper() {
+    return !!(state.me && (state.me.is_super || state.me.role === "super"));
+  }
 
   function toast(msg, type) {
     const el = $("toast");
@@ -47,10 +54,11 @@
   async function checkAuth() {
     if (!API.getToken()) { showLogin(); return; }
     try {
-      await API.me();
+      state.me = await API.me();
       showApp();
     } catch (e) {
       API.clearToken();
+      state.me = null;
       showLogin();
     }
   }
@@ -62,16 +70,40 @@
   function showApp() {
     $("authScreen").hidden = true;
     $("app").hidden = false;
+    applyRoleUI();
     showView("viewEvents");
     loadEvents();
   }
+
+  // 按角色控制入口显隐（后端仍然强制校验，前端只负责不显示没用的入口）
+  function applyRoleUI() {
+    const superUser = isSuper();
+    $("navUsers").hidden = !superUser;
+    $("navFiles").hidden = !superUser;
+    $("settingsBtn").hidden = !superUser;
+    $("createBtn").hidden = !superUser;        // 相册管理员不能新建相册
+    $("albumAdminsCard").hidden = !superUser;  // 相册管理员区块仅超管可管
+    const lbl = document.getElementById("currentUserLabel");
+    if (lbl) {
+      lbl.textContent = (state.me ? state.me.username : "") +
+        (state.me ? "（" + I18N.t(superUser ? "role_super" : "my_role_album") + "）" : "");
+    }
+  }
+
   function showView(id) {
+    // 仅超级管理员可进的视图：即使入口被隐藏，也要挡住直接调用
+    if ((id === "viewUsers" || id === "viewFiles" || id === "viewSettings") && !isSuper()) {
+      id = "viewEvents";
+      loadEvents();
+    }
     $("viewEvents").hidden = id !== "viewEvents";
     $("viewDetail").hidden = id !== "viewDetail";
     $("viewSettings").hidden = id !== "viewSettings";
     $("viewFiles").hidden = id !== "viewFiles";
+    if ($("viewUsers")) $("viewUsers").hidden = id !== "viewUsers";
     $("navEvents").classList.toggle("active", id === "viewEvents" || id === "viewDetail");
     $("navFiles").classList.toggle("active", id === "viewFiles");
+    if ($("navUsers")) $("navUsers").classList.toggle("active", id === "viewUsers");
   }
 
   async function doLogin() {
@@ -85,6 +117,8 @@
     try {
       const data = await API.login(u, p);
       API.setToken(data.token);
+      state.me = { photographer_id: data.photographer_id, username: data.username,
+                   role: data.role, is_super: data.is_super };
       showApp();
     } catch (e) {
       err.textContent = (e && e.msg) || I18N.t("login_failed");
@@ -214,6 +248,7 @@
         </div>
         <div class="meta">
           <span class="chip chip-stat">${I18N.t("stat_combined", { v: ev.view_count || 0, d: ev.download_count || 0 })}</span>
+          ${isSuper() && ev.owner ? `<span class="chip chip-soft">${I18N.t("album_owner")}: ${escapeHtml(ev.owner)}</span>` : ""}
         </div>
         <div class="actions">
           <button class="btn btn-primary sm" data-act="enter" data-id="${escapeHtml(ev.event_id)}">${I18N.t("enter_event")}</button>
@@ -376,6 +411,8 @@
     try {
       const ev = await API.getEvent(eventId);
       state.currentEvent = ev;
+      // 相册管理员区块需要账号列表（仅超管有权限，放在详情打开后加载）
+      if (isSuper() && state.users.length === 0) await loadUsers();
       renderDetail();
       await loadThumbs();
     } catch (e) {
@@ -438,6 +475,7 @@
     $("eventExpireSelect").value = "keep";
     $("eventExpireSelect").disabled = !!ev.purged;
     populateTagSuggestions(ev);
+    renderAlbumAdmins();
   }
 
   // ===== 已有标签快捷选择（中英文配对，避免重复输入）=====
@@ -912,8 +950,289 @@
   }
 
   function openSettings() {
+    if (!isSuper()) { toast(I18N.t("only_super_entry"), "err"); return; }
     showView("viewSettings");
     loadOssSettings();
+  }
+
+  // ===== 账号与权限（仅超级管理员） =====
+  async function loadUsers() {
+    if (!isSuper() || !$("userTableBody")) return;
+    try {
+      state.users = await API.listUsers();
+      renderUsers();
+      if (state.currentEvent) renderAlbumAdmins();
+    } catch (e) {
+      if (e && e.status === 401) { API.clearToken(); showLogin(); return; }
+      toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  function renderUsers() {
+    const tbody = $("userTableBody");
+    if (!tbody) return;
+    $("userCountChip").textContent = state.users.length;
+    $("userEmpty").hidden = state.users.length > 0;
+    tbody.innerHTML = state.users.map((u) => {
+      const albums = u.role === "super"
+        ? `<span class="chip chip-soft">${I18N.t("all_albums")}</span>`
+        : ((u.albums || []).length
+            ? u.albums.map((a) => `<span class="chip chip-soft" title="${escapeHtml(a.event_name)}">${escapeHtml(a.event_name)}</span>`).join("")
+            : `<span class="muted">${I18N.t("no_albums_granted")}</span>`);
+      const isMe = state.me && state.me.photographer_id === u.id;
+      const roleChip = u.role === "super"
+        ? `<span class="chip chip-role-super">${I18N.t("role_super")}</span>`
+        : `<span class="chip chip-role-album">${I18N.t("role_album")}</span>`;
+      const statusHtml = u.is_active
+        ? `<span class="status-valid">${I18N.t("status_active")}</span>`
+        : `<span class="status-expired">${I18N.t("status_disabled")}</span>`;
+      return `
+        <tr data-id="${u.id}">
+          <td class="fname">${escapeHtml(u.username)}${isMe ? " ★" : ""}</td>
+          <td>${roleChip}</td>
+          <td>${statusHtml}</td>
+          <td class="user-albums">${albums}</td>
+          <td class="fmeta">${escapeHtml(u.created_at || "")}</td>
+          <td class="fops">
+            <button class="action-btn" data-act="pw" data-name="${escapeHtml(u.username)}">${I18N.t("reset_password")}</button>
+            ${u.role === "album" ? `<button class="action-btn edit-btn" data-act="albums" data-name="${escapeHtml(u.username)}">${I18N.t("edit_albums")}</button>` : ""}
+            <button class="action-btn ${u.is_active ? "del-btn" : "copy-btn"}" data-act="active" data-name="${escapeHtml(u.username)}">${u.is_active ? I18N.t("disable_user") : I18N.t("enable_user")}</button>
+            <button class="action-btn del-btn" data-act="delete" data-name="${escapeHtml(u.username)}">${I18N.t("delete_user")}</button>
+          </td>
+        </tr>`;
+    }).join("");
+    tbody.querySelectorAll("[data-act]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const u = state.users.find((x) => x.username === b.dataset.name);
+        if (!u) return;
+        if (b.dataset.act === "pw") resetUserPassword(u);
+        else if (b.dataset.act === "albums") openUserAlbums(u);
+        else if (b.dataset.act === "active") toggleUserActive(u);
+        else if (b.dataset.act === "delete") deleteUserAccount(u);
+      });
+    });
+  }
+
+  // 相册勾选框（新建账号 / 编辑授权共用）
+  function renderAlbumPicker(container, selectedIds) {
+    if (!container) return;
+    selectedIds = selectedIds || [];
+    if (state.events.length === 0) {
+      container.innerHTML = `<span class="muted">${I18N.t("no_events")}</span>`;
+      return;
+    }
+    container.innerHTML = state.events.map((ev) => `
+      <label class="album-option">
+        <input type="checkbox" value="${escapeHtml(ev.event_id)}" ${selectedIds.indexOf(ev.event_id) !== -1 ? "checked" : ""}>
+        <span class="album-option-name">${escapeHtml(ev.event_name)}</span>
+        <em class="mono">${escapeHtml(ev.event_id)}</em>
+      </label>`).join("");
+  }
+  function pickedAlbums(container) {
+    if (!container) return [];
+    return Array.from(container.querySelectorAll("input[type=checkbox]:checked")).map((i) => i.value);
+  }
+
+  function showPasswordModal(username, password) {
+    $("pwUser").value = username || "";
+    $("pwValue").value = password || "";
+    $("pwModal").hidden = false;
+  }
+
+  function openUserCreate() {
+    $("userNameInput").value = "";
+    $("userPassInput").value = "";
+    $("userRoleSelect").value = "album";
+    renderAlbumPicker($("userAlbumsPicker"), []);
+    updateRoleHint();
+    $("userCreateModal").hidden = false;
+    setTimeout(() => $("userNameInput").focus(), 50);
+  }
+
+  function updateRoleHint() {
+    const role = $("userRoleSelect").value;
+    $("userRoleHint").textContent = I18N.t(role === "super" ? "role_super_desc" : "role_album_desc");
+    $("userAlbumsField").style.display = role === "super" ? "none" : "";
+  }
+
+  async function confirmUserCreate() {
+    const username = $("userNameInput").value.trim();
+    const password = $("userPassInput").value;
+    const role = $("userRoleSelect").value;
+    if (!username) { toast(I18N.t("new_user_name_ph"), "err"); return; }
+    const btn = $("userCreateConfirm");
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = I18N.t("saving");
+    try {
+      const ids = role === "super" ? [] : pickedAlbums($("userAlbumsPicker"));
+      const payload = { username: username, role: role, event_ids: ids };
+      if (password) payload.password = password;      // 留空则后端自动生成
+      const data = await API.createUser(payload);
+      $("userCreateModal").hidden = true;
+      toast(I18N.t("user_created"), "ok");
+      if (data && data.password) showPasswordModal(data.username, data.password);
+      await loadUsers();
+      if (state.currentEvent) await refreshCurrentEvent();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  function openUserAlbums(u) {
+    state.editUser = u;
+    $("userAlbumsTitle").textContent = I18N.t("grant_albums_title", { name: u.username });
+    renderAlbumPicker($("userAlbumsPicker"), (u.albums || []).map((a) => a.event_id));
+    $("userAlbumsModal").hidden = false;
+  }
+
+  async function saveUserAlbums() {
+    if (!state.editUser) return;
+    const btn = $("userAlbumsSave");
+    btn.disabled = true;
+    try {
+      await API.setUserAlbums(state.editUser.id, pickedAlbums($("userAlbumsPicker")));
+      $("userAlbumsModal").hidden = true;
+      toast(I18N.t("albums_saved"), "ok");
+      await loadUsers();
+      if (state.currentEvent) await refreshCurrentEvent();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function resetUserPassword(u) {
+    if (!confirm(I18N.t("reset_password_confirm", { name: u.username }))) return;
+    try {
+      const data = await API.resetUserPassword(u.id);
+      toast(I18N.t("password_reset_done"), "ok");
+      showPasswordModal(data.username, data.password);
+      await loadUsers();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    }
+  }
+
+  async function toggleUserActive(u) {
+    const on = !u.is_active;
+    if (!confirm(I18N.t(on ? "enable_user_confirm" : "disable_user_confirm", { name: u.username }))) return;
+    try {
+      await API.setUserActive(u.id, on);
+      toast(I18N.t(on ? "user_enabled" : "user_disabled"), "ok");
+      await loadUsers();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    }
+  }
+
+  async function deleteUserAccount(u) {
+    if (!confirm(I18N.t("delete_user_confirm", { name: u.username }))) return;
+    try {
+      await API.deleteUser(u.id);
+      toast(I18N.t("user_deleted"), "ok");
+      await loadUsers();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    }
+  }
+
+  // ===== 相册详情：相册管理员区块（仅超级管理员） =====
+  function renderAlbumAdmins() {
+    const card = $("albumAdminsCard");
+    const ev = state.currentEvent;
+    if (!card || !ev) return;
+    if (!isSuper()) { card.hidden = true; return; }
+    card.hidden = false;
+
+    const admins = ev.admins || [];
+    const list = $("albumAdminsList");
+    list.innerHTML = admins.length
+      ? admins.map((a) => `
+          <span class="admin-chip${a.is_active ? "" : " is-off"}">
+            <span class="admin-name">${escapeHtml(a.username)}</span>
+            ${a.is_active ? "" : `<em>${I18N.t("status_disabled")}</em>`}
+            <button type="button" class="admin-remove" data-id="${a.id}" data-name="${escapeHtml(a.username)}" title="${I18N.t("remove")}" aria-label="${I18N.t("remove")}">✕</button>
+          </span>`).join("")
+      : `<span class="muted">${I18N.t("no_album_admins")}</span>`;
+    list.querySelectorAll(".admin-remove").forEach((b) => {
+      b.addEventListener("click", () => revokeAlbumAdmin(parseInt(b.dataset.id, 10), b.dataset.name));
+    });
+
+    // 「授权已有账号」下拉：album 角色且尚未授权本相册
+    const sel = $("grantUserSelect");
+    const grantedIds = admins.map((a) => a.id);
+    const options = state.users.filter((u) => u.role !== "super" && grantedIds.indexOf(u.id) === -1);
+    sel.innerHTML = options.length
+      ? options.map((u) => `<option value="${u.id}">${escapeHtml(u.username)}</option>`).join("")
+      : `<option value="">${I18N.t("select_user_ph")}</option>`;
+    $("grantExistingBtn").disabled = options.length === 0;
+
+    $("albumOwnerInfo").textContent = I18N.t("album_owner") + ": " + (ev.owner || "-");
+  }
+
+  async function refreshCurrentEvent() {
+    if (!state.currentEvent) return;
+    try {
+      state.currentEvent = await API.getEvent(state.currentEvent.event_id);
+      renderDetail();
+    } catch (e) { /* 权限被收回时忽略 */ }
+  }
+
+  async function createAdminForAlbum() {
+    if (!state.currentEvent) return;
+    const name = $("newAdminName").value.trim();
+    if (!name) { toast(I18N.t("new_user_name_ph"), "err"); return; }
+    const btn = $("createAdminBtn");
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = I18N.t("saving");
+    try {
+      const data = await API.createUser({
+        username: name, role: "album", event_ids: [state.currentEvent.event_id],
+      });
+      $("newAdminName").value = "";
+      toast(I18N.t("admin_created_for_album"), "ok");
+      if (data && data.password) showPasswordModal(data.username, data.password);
+      await refreshCurrentEvent();
+      await loadUsers();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  async function grantExistingUser() {
+    if (!state.currentEvent) return;
+    const pid = parseInt($("grantUserSelect").value, 10);
+    if (!pid) return;
+    try {
+      await API.grantAlbum(pid, state.currentEvent.event_id);
+      toast(I18N.t("admin_granted"), "ok");
+      await refreshCurrentEvent();
+      await loadUsers();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    }
+  }
+
+  async function revokeAlbumAdmin(pid, name) {
+    if (!state.currentEvent) return;
+    if (!confirm(I18N.t("revoke_admin_confirm", { name: name }))) return;
+    try {
+      await API.revokeAlbum(pid, state.currentEvent.event_id);
+      toast(I18N.t("admin_revoked"), "ok");
+      await refreshCurrentEvent();
+      await loadUsers();
+    } catch (e) {
+      toast((e && e.msg) || I18N.t("save_failed"), "err");
+    }
   }
 
   // ===== 事件绑定 =====
@@ -944,6 +1263,25 @@
 
     $("navEvents").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
     $("navFiles").addEventListener("click", () => { showView("viewFiles"); loadFiles(); });
+    $("navUsers").addEventListener("click", () => { showView("viewUsers"); loadUsers(); });
+    $("newUserBtn").addEventListener("click", openUserCreate);
+    $("userCreateClose").addEventListener("click", () => { $("userCreateModal").hidden = true; });
+    $("userCreateModal").addEventListener("click", (e) => { if (e.target === $("userCreateModal")) $("userCreateModal").hidden = true; });
+    $("userCreateConfirm").addEventListener("click", confirmUserCreate);
+    $("userRoleSelect").addEventListener("change", updateRoleHint);
+    $("userAlbumsClose").addEventListener("click", () => { $("userAlbumsModal").hidden = true; });
+    $("userAlbumsModal").addEventListener("click", (e) => { if (e.target === $("userAlbumsModal")) $("userAlbumsModal").hidden = true; });
+    $("userAlbumsSave").addEventListener("click", saveUserAlbums);
+    $("pwModalClose").addEventListener("click", () => { $("pwModal").hidden = true; });
+    $("pwDoneBtn").addEventListener("click", () => { $("pwModal").hidden = true; });
+    $("pwCopyBtn").addEventListener("click", () => {
+      $("pwValue").select();
+      copyText($("pwValue").value);
+      toast(I18N.t("copied"), "ok");
+    });
+    $("createAdminBtn").addEventListener("click", createAdminForAlbum);
+    $("grantExistingBtn").addEventListener("click", grantExistingUser);
+    $("newAdminName").addEventListener("keydown", (e) => { if (e.key === "Enter") createAdminForAlbum(); });
     $("backBtn").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
     $("settingsBtn").addEventListener("click", openSettings);
     $("backFromSettings").addEventListener("click", () => { showView("viewEvents"); loadEvents(); });
@@ -988,9 +1326,11 @@
   function toggleLang() {
     I18N.setLang(I18N.getLang() === "zh" ? "en" : "zh");
     applyI18n();
+    applyRoleUI();
     if (state.currentEvent) renderDetail();
     if (!$("viewEvents").hidden) renderEvents();
     if (!$("viewFiles").hidden) renderFiles();
+    if ($("viewUsers") && !$("viewUsers").hidden) renderUsers();
   }
 
   // ===== 初始化 =====

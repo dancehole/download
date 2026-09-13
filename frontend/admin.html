@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/css/admin.css?v=13">
+  <link rel="stylesheet" href="static/css/admin.css?v=15">
 </head>
 <body>
   <!-- 登录 -->
@@ -47,8 +47,10 @@
         <h1 class="brand" data-i18n="admin_title">摄影师后台</h1>
         <button class="crumb active" id="navEvents" type="button" data-i18n="my_albums">我的相册</button>
         <button class="crumb" id="navFiles" type="button" data-i18n="my_files">共享文件</button>
+        <button class="crumb" id="navUsers" type="button" data-i18n="user_management" hidden>用户管理</button>
       </div>
       <div class="topbar-right">
+        <span class="who" id="currentUserLabel"></span>
         <button class="btn btn-ghost sm" id="settingsBtn" type="button" data-i18n="settings">设置</button>
         <button class="lang-mini" id="langToggle2" type="button">
           <span class="lang-opt" data-lang="zh">中文</span><span class="sep">/</span><span class="lang-opt" data-lang="en">EN</span>
@@ -132,6 +134,39 @@
         </div>
       </section>
 
+      <!-- 用户管理视图（仅超级管理员） -->
+      <section class="view" id="viewUsers" hidden>
+        <div class="section-head">
+          <h2 class="section-title" data-i18n="users_title">账号与权限</h2>
+          <span class="chip" id="userCountChip">0</span>
+        </div>
+        <p class="muted" data-i18n="users_desc">超级管理员可看到全部相册、共享文件和系统设置；相册管理员只能管理被授权的相册。</p>
+        <div class="toolbar">
+          <div class="toolbar-create">
+            <button class="btn btn-primary" id="newUserBtn" type="button" data-i18n="new_user">新建账号</button>
+          </div>
+        </div>
+        <div class="file-table-wrap">
+          <table class="file-table users-table">
+            <thead>
+              <tr>
+                <th data-i18n="new_user_name">登录用户名</th>
+                <th data-i18n="role">角色</th>
+                <th data-i18n="status">状态</th>
+                <th data-i18n="authorized_albums">授权相册</th>
+                <th data-i18n="created_at_label">创建时间</th>
+                <th data-i18n="operations">操作</th>
+              </tr>
+            </thead>
+            <tbody id="userTableBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="userEmpty" hidden>
+          <div class="empty-icon">👤</div>
+          <p data-i18n="no_events">还没有账号</p>
+        </div>
+      </section>
+
       <!-- 活动详情视图 -->
       <section class="view" id="viewDetail" hidden>
         <button class="back-link" id="backBtn" type="button">‹ <span data-i18n="back">返回</span></button>
@@ -163,6 +198,24 @@
           <div class="share-row">
             <button class="btn btn-ghost sm" id="regenBtn" type="button" data-i18n="regen_share">重新生成链接</button>
           </div>
+        </div>
+
+        <!-- 相册管理员（仅超级管理员可见） -->
+        <div class="settings-card" id="albumAdminsCard" hidden>
+          <h3 data-i18n="album_admins">相册管理员</h3>
+          <p class="muted" data-i18n="album_admins_desc">只有这里列出的账号（和超级管理员）能管理本相册。</p>
+          <div class="admins-list" id="albumAdminsList"></div>
+          <div class="admin-add-grid">
+            <div class="admin-add-row">
+              <input type="text" id="newAdminName" class="input" data-i18n-ph="new_user_name_ph" placeholder="3-32 位字母/数字/下划线/点/短横线" autocomplete="off">
+              <button class="btn btn-primary sm" id="createAdminBtn" type="button" data-i18n="create_admin_for_album">为该相册创建管理员</button>
+            </div>
+            <div class="admin-add-row">
+              <select id="grantUserSelect" class="input"></select>
+              <button class="btn btn-ghost sm" id="grantExistingBtn" type="button" data-i18n="grant_existing_user">授权已有账号</button>
+            </div>
+          </div>
+          <p class="muted" id="albumOwnerInfo"></p>
         </div>
 
         <div class="settings-card">
@@ -430,10 +483,83 @@
     </div>
   </div>
 
+  <!-- 新建账号弹窗（仅超级管理员） -->
+  <div class="modal-mask" id="userCreateModal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2 data-i18n="new_user">新建账号</h2>
+        <button class="modal-close" id="userCreateClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label" data-i18n="new_user_name">登录用户名</span>
+          <input type="text" id="userNameInput" class="input" data-i18n-ph="new_user_name_ph" placeholder="3-32 位字母/数字/下划线/点/短横线" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label" data-i18n="password">密码</span>
+          <input type="text" id="userPassInput" class="input" data-i18n-ph="new_user_pw_ph" placeholder="留空自动生成 12 位强密码" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label" data-i18n="new_user_role">账号角色</span>
+          <select id="userRoleSelect" class="input">
+            <option value="album" data-i18n="role_album">相册管理员</option>
+            <option value="super" data-i18n="role_super">超级管理员</option>
+          </select>
+          <p class="muted" id="userRoleHint"></p>
+        </label>
+        <div class="field" id="userAlbumsField">
+          <span class="field-label" data-i18n="new_user_albums">可管理的相册（可稍后再加）</span>
+          <div class="album-picker" id="userAlbumsPicker"></div>
+        </div>
+        <button class="btn btn-primary block" id="userCreateConfirm" type="button" data-i18n="create">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 授权相册弹窗（编辑某账号的授权集合） -->
+  <div class="modal-mask" id="userAlbumsModal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="userAlbumsTitle" data-i18n="authorized_albums">授权相册</h2>
+        <button class="modal-close" id="userAlbumsClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" data-i18n="grant_albums_hint">勾选后保存即生效；取消勾选 = 收回权限（账号保留）。</p>
+        <div class="album-picker" id="userAlbumsPicker"></div>
+        <button class="btn btn-primary block" id="userAlbumsSave" type="button" data-i18n="save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 一次性密码弹窗 -->
+  <div class="modal-mask" id="pwModal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2 data-i18n="password_once_title">请立即复制保存（只显示这一次）</h2>
+        <button class="modal-close" id="pwModalClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label" data-i18n="new_user_name">登录用户名</span>
+          <input type="text" id="pwUser" class="input mono" readonly>
+        </label>
+        <label class="field">
+          <span class="field-label" data-i18n="password">密码</span>
+          <input type="text" id="pwValue" class="input mono" readonly>
+        </label>
+        <p class="muted" data-i18n="password_once_hint">关闭后无法再查看，忘记只能重置。</p>
+        <div class="settings-actions">
+          <button class="btn btn-primary" id="pwCopyBtn" type="button" data-i18n="copy">复制</button>
+          <button class="btn" id="pwDoneBtn" type="button" data-i18n="close">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden></div>
 
-  <script src="static/js/i18n.js?v=13"></script>
-  <script src="static/js/api.js?v=13"></script>
-  <script src="static/js/admin.js?v=13"></script>
+  <script src="static/js/i18n.js?v=15"></script>
+  <script src="static/js/api.js?v=15"></script>
+  <script src="static/js/admin.js?v=15"></script>
 </body>
 </html>
