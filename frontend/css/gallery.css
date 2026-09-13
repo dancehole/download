@@ -129,9 +129,58 @@ button { font-family: inherit; cursor: pointer; }
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  -ms-overflow-style: none;
   height: 100%;
+  cursor: grab;
+  touch-action: pan-x;
 }
 .tagbar-inner::-webkit-scrollbar { display: none; }
+/* PC 鼠标拖拽分类栏：拖动中禁止选中文字、禁止 pill 抢事件 */
+.tagbar-inner.sx-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.tagbar-inner.sx-dragging .tag-pill { pointer-events: none; }
+
+/* 溢出提示：左右渐隐 + 箭头按钮（仅鼠标设备显示箭头） */
+.tagbar.sx-overflow.sx-can-left::before,
+.tagbar.sx-overflow.sx-can-right::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 20px;
+  z-index: 2;
+  pointer-events: none;
+}
+.tagbar.sx-overflow.sx-can-left::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(11,11,13,0.95) 20%, rgba(11,11,13,0));
+}
+.tagbar.sx-overflow.sx-can-right::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(11,11,13,0.95) 20%, rgba(11,11,13,0));
+}
+.tagbar-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 28px; height: 28px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20,20,24,0.94);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  transition: opacity 0.18s, color 0.18s, border-color 0.18s;
+}
+.tagbar-arrow.prev { left: 6px; }
+.tagbar-arrow.next { right: 6px; }
+.tagbar-arrow:hover { color: var(--accent); border-color: var(--accent-dim); }
+.tagbar-arrow:disabled { opacity: 0; pointer-events: none; }
+/* 鼠标设备（JS 用 matchMedia + maxTouchPoints 判定后加 .sx-fine）才显示箭头 */
+.tagbar.sx-overflow.sx-fine .tagbar-arrow { display: flex; }
+/* 给箭头让出空间，避免遮挡首尾分类 */
+.tagbar.sx-overflow.sx-fine .tagbar-inner { padding-left: 40px; padding-right: 40px; }
 .tag-pill {
   flex-shrink: 0;
   background: var(--surface);
@@ -281,6 +330,7 @@ button { font-family: inherit; cursor: pointer; }
   align-items: center;
   justify-content: center;
   padding: 0 60px;
+  touch-action: none;   /* 手势全部由 JS 处理：拖动平移 / 双指缩放 */
 }
 .lb-img {
   max-width: 100%;
@@ -288,9 +338,60 @@ button { font-family: inherit; cursor: pointer; }
   object-fit: contain;
   border-radius: 6px;
   opacity: 0;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.3s ease;   /* transform 不加过渡，避免拖动/双指缩放卡顿 */
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
 }
+/* 程序化缩放（双击/滚轮/按钮）时才给 transform 过渡 */
+.lb-img.smooth { transition: opacity 0.3s ease, transform 0.2s ease; }
 .lb-img.loaded { opacity: 1; }
+.lb-stage.is-zoomed { cursor: grab; }
+.lb-stage.is-zoomed:active { cursor: grabbing; }
+
+/* 灯箱缩放控件 */
+.lb-zoom {
+  position: absolute;
+  top: 16px; left: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(20,20,24,0.8);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.lb-zbtn {
+  min-width: 30px; height: 28px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 999px;
+  transition: color 0.18s, background 0.18s;
+}
+.lb-zbtn:hover { color: var(--accent); background: rgba(255,255,255,0.06); }
+.lb-zbtn.pct {
+  min-width: 54px;
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .lb-zoom { top: 10px; left: 10px; }
+  .lb-zbtn { min-width: 26px; height: 26px; }
+}
 .lb-spinner {
   position: absolute;
   width: 34px; height: 34px;

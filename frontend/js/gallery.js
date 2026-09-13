@@ -20,9 +20,11 @@
     loading: false,
     hasMore: true,
     lbIndex: -1,
-    zoomed: false,
-    panX: 0, panY: 0,
+    lbShowingOriginal: false,
+    view: { scale: 1, tx: 0, ty: 0 },   // 灯箱缩放/平移状态
   };
+  // 分类栏横向滚动更新回调（ScrollX 在 bindEvents 中挂载）
+  let tagbarUpdate = function () {};
 
   function toast(msg) {
     const el = $("toast");
@@ -68,6 +70,7 @@
       });
       tagbarInner.appendChild(b);
     });
+    requestAnimationFrame(() => tagbarUpdate());
   }
 
   function escapeHtml(s) {
@@ -198,9 +201,8 @@
   // ===== 灯箱 =====
   function openLightbox(index) {
     state.lbIndex = index;
-    state.zoomed = false;
-    state.panX = 0; state.panY = 0;
     state.lbShowingOriginal = false;
+    resetZoom();
     $("lightbox").hidden = false;
     document.body.style.overflow = "hidden";
     loadLightboxImage();
@@ -211,14 +213,14 @@
     document.body.style.overflow = "";
     $("lbImg").src = "";
     $("lbImg").classList.remove("loaded");
+    resetZoom();
   }
   function navLightbox(dir) {
     const n = state.photos.length;
     if (n === 0) return;
     state.lbIndex = (state.lbIndex + dir + n) % n;
-    state.zoomed = false;
-    state.panX = 0; state.panY = 0;
     state.lbShowingOriginal = false;
+    resetZoom();
     loadLightboxImage();
     renderLightboxBar();
   }
@@ -228,7 +230,7 @@
     const img = $("lbImg");
     const spinner = $("lbSpinner");
     img.classList.remove("loaded");
-    img.style.transform = "";
+    resetZoom();
     spinner.hidden = false;
 
     const url = state.lbShowingOriginal ? p.original_url : p.preview_url;
@@ -283,17 +285,77 @@
     window.open(u, "_blank");
   }
 
-  // 双击/双击缩放 + 拖拽
+  // ===== 灯箱缩放/平移引擎 =====
+  // 变换模型：transform: translate3d(tx,ty,0) scale(s)，origin 为图片中心
+  // 屏幕上一点 = 视口中心 + t + s * (图片上的偏移)，据此可把任意一点作为缩放锚点。
+  const MAX_SCALE = 6;        // 最大放大倍率
+  const DBL_SCALE = 2.5;      // 双击放大目标倍率
+  const view = state.view;
   let lastTap = 0;
-  function toggleZoom(cx, cy) {
-    const img = $("lbImg");
-    state.zoomed = !state.zoomed;
-    if (state.zoomed) {
-      state.panX = 0; state.panY = 0;
-      img.style.transform = "scale(2)";
-    } else {
-      img.style.transform = "";
+
+  function viewport() {
+    return { cx: window.innerWidth / 2, cy: window.innerHeight / 2, w: window.innerWidth, h: window.innerHeight };
+  }
+
+  // 边界限制：放大后可以拖到任意一条边，但拖不出黑边；未放大时复位居中
+  function clampView() {
+    if (view.scale <= 1.02) {
+      view.scale = 1; view.tx = 0; view.ty = 0;
+      return;
     }
+    const img = $("lbImg");
+    const vp = viewport();
+    // offsetWidth/Height 是布局尺寸，不受 transform 影响
+    const w = img.offsetWidth || 0;
+    const h = img.offsetHeight || 0;
+    const mx = Math.max(0, (w * view.scale - vp.w) / 2);
+    const my = Math.max(0, (h * view.scale - vp.h) / 2);
+    view.tx = Math.min(mx, Math.max(-mx, view.tx));
+    view.ty = Math.min(my, Math.max(-my, view.ty));
+  }
+
+  function paintView(animate) {
+    const img = $("lbImg");
+    if (img) {
+      img.classList.toggle("smooth", !!animate);
+      img.style.transform = view.scale <= 1.001
+        ? ""
+        : `translate3d(${view.tx.toFixed(2)}px, ${view.ty.toFixed(2)}px, 0) scale(${view.scale.toFixed(4)})`;
+    }
+    const label = $("lbZoomReset");
+    if (label) label.textContent = Math.round(view.scale * 100) + "%";
+    const stageEl = $("lbStage");
+    if (stageEl) stageEl.classList.toggle("is-zoomed", view.scale > 1.02);
+  }
+
+  function resetZoom() {
+    view.scale = 1; view.tx = 0; view.ty = 0;
+    paintView(true);
+  }
+
+  // 以屏幕上 (clientX, clientY) 为锚点缩放到 nextScale（该点屏幕位置保持不动）
+  function zoomAt(clientX, clientY, nextScale, animate) {
+    const s0 = view.scale || 1;
+    const s1 = Math.min(MAX_SCALE, Math.max(1, nextScale));
+    const vp = viewport();
+    const qx = clientX - vp.cx, qy = clientY - vp.cy;
+    const k = s1 / s0;
+    view.tx = qx - k * (qx - view.tx);
+    view.ty = qy - k * (qy - view.ty);
+    view.scale = s1;
+    clampView();
+    paintView(animate);
+  }
+
+  function zoomBy(factor, animate) {
+    const vp = viewport();
+    zoomAt(vp.cx, vp.cy, view.scale * factor, animate);
+  }
+
+  // 双击/双击 tap：在点击处放大，已放大则复位
+  function toggleZoomAt(clientX, clientY) {
+    if (view.scale > 1.02) resetZoom();
+    else zoomAt(clientX, clientY, DBL_SCALE, true);
   }
 
   // ===== 面板 =====
@@ -341,52 +403,175 @@
       el.addEventListener("click", () => closeSheet(el.dataset.close));
     });
 
+    // 分类栏横向滚动增强：PC 鼠标拖拽 + 滚轮横向 + 左右箭头
+    if (window.ScrollX) {
+      tagbarUpdate = ScrollX.enable(tagbarInner, {
+        wrap: $("tagbar"),
+        prev: $("tagbarPrev"),
+        next: $("tagbarNext"),
+        step: 0.7,
+      });
+    }
+
     // 灯箱
     $("lbClose").addEventListener("click", closeLightbox);
     $("lbBackdrop").addEventListener("click", closeLightbox);
     $("lbPrev").addEventListener("click", () => navLightbox(-1));
     $("lbNext").addEventListener("click", () => navLightbox(1));
+
+    // 缩放控件
+    $("lbZoomIn").addEventListener("click", () => zoomBy(1.5, true));
+    $("lbZoomOut").addEventListener("click", () => zoomBy(1 / 1.5, true));
+    $("lbZoomReset").addEventListener("click", () => resetZoom());
+
     document.addEventListener("keydown", (e) => {
       if ($("lightbox").hidden) return;
-      if (e.key === "Escape") closeLightbox();
-      else if (e.key === "ArrowLeft") navLightbox(-1);
-      else if (e.key === "ArrowRight") navLightbox(1);
+      if (e.key === "Escape") { closeLightbox(); return; }
+      if (e.key === "+" || e.key === "=") { zoomBy(1.5, true); return; }
+      if (e.key === "-" || e.key === "_") { zoomBy(1 / 1.5, true); return; }
+      if (e.key === "0") { resetZoom(); return; }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const dir = e.key === "ArrowLeft" ? -1 : 1;
+        if (view.scale > 1.02) {
+          view.tx += (dir === -1 ? 90 : -90);   // 放大后方向键用于平移看边角细节
+          clampView(); paintView(false);
+        } else {
+          navLightbox(dir);
+        }
+      }
     });
 
-    // 灯箱图片双击缩放
+    // ===== 灯箱手势：双击锚点缩放 / 双指缩放 / 拖动平移 / 滚轮缩放 =====
     const stage = $("lbStage");
     const img = $("lbImg");
-    img.addEventListener("dblclick", () => toggleZoom());
-    stage.addEventListener("touchend", (e) => {
-      if (state.zoomed) return;
-      const now = Date.now();
-      if (now - lastTap < 300) { toggleZoom(); e.preventDefault(); }
-      lastTap = now;
-    });
+    img.draggable = false;
+    let lastTouchAt = 0;
 
-    // 灯箱拖拽（缩放时平移）
-    let dragStart = null;
-    img.addEventListener("mousedown", (e) => {
-      if (!state.zoomed) return;
-      dragStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
+    // PC：双击在鼠标位置放大，再双击复位
+    stage.addEventListener("dblclick", (e) => {
+      if (state.lbIndex < 0) return;
+      if (Date.now() - lastTouchAt < 800) return;   // 触摸端的合成 dblclick，交给 tap 逻辑
       e.preventDefault();
+      toggleZoomAt(e.clientX, e.clientY);
     });
-    window.addEventListener("mousemove", (e) => {
-      if (!dragStart) return;
-      state.panX = e.clientX - dragStart.x;
-      state.panY = e.clientY - dragStart.y;
-      img.style.transform = `scale(2) translate(${state.panX / 2}px, ${state.panY / 2}px)`;
-    });
-    window.addEventListener("mouseup", () => { dragStart = null; });
 
-    // 灯箱触摸滑动切换
-    let touchStartX = 0;
-    stage.addEventListener("touchstart", (e) => { touchStartX = e.changedTouches[0].clientX; }, { passive: true });
-    stage.addEventListener("touchend", (e) => {
-      if (state.zoomed) return;
-      const dx = e.changedTouches[0].clientX - touchStartX;
-      if (Math.abs(dx) > 60) navLightbox(dx < 0 ? 1 : -1);
-    }, { passive: true });
+    // PC：滚轮以光标为锚点缩放（触控板捏合/ctrl+滚轮同样是 wheel 事件）
+    stage.addEventListener("wheel", (e) => {
+      if (state.lbIndex < 0) return;
+      if (e.cancelable) e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0018);
+      zoomAt(e.clientX, e.clientY, view.scale * factor, false);
+    }, { passive: false });
+
+    const pointers = new Map();
+    let gesture = null;
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const pinchPts = () => Array.from(pointers.values()).slice(0, 2);
+
+    stage.addEventListener("pointerdown", (e) => {
+      if (state.lbIndex < 0) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (e.pointerType === "touch") {
+        lastTouchAt = Date.now();
+        if (e.cancelable) e.preventDefault();   // 抑制合成鼠标事件（避免与 dblclick 重复触发）
+      }
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+
+      if (pointers.size === 1) {
+        gesture = {
+          mode: "pan", pointerType: e.pointerType,
+          sx: e.clientX, sy: e.clientY, t0x: view.tx, t0y: view.ty,
+          moved: false, t: Date.now(),
+        };
+      } else if (pointers.size === 2) {
+        const pts = pinchPts();
+        const vp = viewport();
+        const m = mid(pts[0], pts[1]);
+        gesture = {
+          mode: "pinch",
+          d0: dist(pts[0], pts[1]) || 1, mid0: m, s0: view.scale,
+          t0x: view.tx, t0y: view.ty,
+          mqx: m.x - vp.cx, mqy: m.y - vp.cy,
+          moved: true, t: Date.now(),
+        };
+        img.classList.remove("smooth");
+      }
+    });
+
+    stage.addEventListener("pointermove", (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (!gesture) return;
+      if (e.cancelable) e.preventDefault();
+
+      if (gesture.mode === "pinch" && pointers.size >= 2) {
+        const pts = pinchPts();
+        const vp = viewport();
+        const m = mid(pts[0], pts[1]);
+        const s1 = Math.min(MAX_SCALE, Math.max(1, gesture.s0 * (dist(pts[0], pts[1]) / gesture.d0)));
+        const k = s1 / gesture.s0;
+        // 以双指中点为锚点缩放，同时跟随双指中点移动做平移
+        view.tx = (gesture.mqx - k * (gesture.mqx - gesture.t0x)) + (m.x - gesture.mid0.x);
+        view.ty = (gesture.mqy - k * (gesture.mqy - gesture.t0y)) + (m.y - gesture.mid0.y);
+        view.scale = s1;
+        clampView();
+        paintView(false);
+        return;
+      }
+
+      if (gesture.mode === "pan") {
+        const dx = e.clientX - gesture.sx;
+        const dy = e.clientY - gesture.sy;
+        if (!gesture.moved && Math.hypot(dx, dy) < 8) return;
+        gesture.moved = true;
+        if (view.scale <= 1.02) return;   // 未放大：位移交给「左右滑动切换上下张」
+        img.classList.remove("smooth");
+        view.tx = gesture.t0x + dx;
+        view.ty = gesture.t0y + dy;
+        clampView();
+        paintView(false);
+      }
+    });
+
+    function endPointer(e) {
+      if (!pointers.has(e.pointerId)) return;
+      const g = gesture;
+      pointers.delete(e.pointerId);
+
+      if (pointers.size === 0) {
+        gesture = null;
+        if (!g || g.mode !== "pan") return;
+        const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
+        const dur = Date.now() - g.t;
+        if (!g.moved && dur < 400 && Math.hypot(dx, dy) < 10) {
+          // 单击（tap）：触摸端 320ms 内两次即双击 → 在触点处放大/复位
+          if (g.pointerType === "touch") {
+            const now = Date.now();
+            if (now - lastTap < 320) { lastTap = 0; toggleZoomAt(e.clientX, e.clientY); }
+            else lastTap = now;
+          }
+        } else if (view.scale <= 1.02 && g.pointerType === "touch" && dur < 900
+                   && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          navLightbox(dx < 0 ? 1 : -1);   // 未放大：左右滑动切换上下张
+        }
+        return;
+      }
+
+      // 双指抬起一根：剩下那根重新作为平移起点，避免画面跳变
+      if (pointers.size === 1) {
+        const rest = Array.from(pointers.values())[0];
+        gesture = {
+          mode: "pan", pointerType: "touch",
+          sx: rest.x, sy: rest.y, t0x: view.tx, t0y: view.ty,
+          moved: true, t: Date.now(),
+        };
+      }
+    }
+    stage.addEventListener("pointerup", endPointer);
+    stage.addEventListener("pointercancel", endPointer);
+    stage.addEventListener("lostpointercapture", endPointer);
 
     // 无限滚动
     const io = new IntersectionObserver((entries) => {

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/css/gallery.css?v=13">
+  <link rel="stylesheet" href="static/css/gallery.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,13 @@
   </header>
 
   <nav class="tagbar" id="tagbar" aria-label="标签筛选">
+    <button class="tagbar-arrow prev" id="tagbarPrev" type="button" aria-label="分类向左">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
     <div class="tagbar-inner" id="tagbarInner"></div>
+    <button class="tagbar-arrow next" id="tagbarNext" type="button" aria-label="分类向右">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
   </nav>
 
   <main class="stream-wrap">
@@ -61,6 +67,11 @@
     <button class="lb-close" id="lbClose" type="button" aria-label="关闭">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
+    <div class="lb-zoom" id="lbZoom">
+      <button class="lb-zbtn" id="lbZoomOut" type="button" aria-label="缩小">−</button>
+      <button class="lb-zbtn pct" id="lbZoomReset" type="button" title="点击复位">100%</button>
+      <button class="lb-zbtn" id="lbZoomIn" type="button" aria-label="放大">＋</button>
+    </div>
     <div class="lb-bar" id="lbBar"></div>
   </div>
 
@@ -131,8 +142,9 @@
     <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2024302719号</a>
   </footer>
 
-  <script src="static/js/i18n.js?v=13"></script>
-  <script src="static/js/api.js?v=13"></script>
-  <script src="static/js/gallery.js?v=13"></script>
+  <script src="static/js/i18n.js?v=14"></script>
+  <script src="static/js/api.js?v=14"></script>
+  <script src="static/js/scrollx.js?v=14"></script>
+  <script src="static/js/gallery.js?v=14"></script>
 </body>
 </html>
