@@ -35,6 +35,8 @@ def event_to_dict(ev: dict) -> dict:
         "preview_size": ev.get("preview_size", 640),
         "use_oss": bool(ev.get("use_oss", True)),
         "created_at": _dt(ev["created_at"]),
+        # 归属账号（超级管理员可见；公开分享页不带该字段）
+        "owner": ev.get("owner_name"),
         # 过期时间：None = 永不过期
         "expires_at": _dt(expires_at),
         "expires_at_text": expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else None,

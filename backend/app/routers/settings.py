@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from ..auth import current_photographer
+from ..auth import current_super
 from ..models import get_setting, set_setting
 from .. import oss_service
 
@@ -18,7 +18,8 @@ class OssConfig(BaseModel):
 
 
 @router.get("/oss")
-async def get_oss_settings(user=Depends(current_photographer)):
+async def get_oss_settings(user=Depends(current_super)):
+    """OSS 配置读取：仅超级管理员。"""
     keys = ["oss_enabled", "oss_access_key_id", "oss_access_key_secret",
             "oss_endpoint", "oss_bucket", "oss_custom_domain", "oss_sign_url_ttl"]
     vals = {}
@@ -40,7 +41,8 @@ async def get_oss_settings(user=Depends(current_photographer)):
 
 
 @router.put("/oss")
-async def update_oss_settings(cfg: OssConfig, user=Depends(current_photographer)):
+async def update_oss_settings(cfg: OssConfig, user=Depends(current_super)):
+    """OSS 配置修改：仅超级管理员。"""
     current_secret = await get_setting("oss_access_key_secret") or ""
     new_secret = current_secret if cfg.access_key_secret == "" or cfg.access_key_secret == "****" else cfg.access_key_secret
 
@@ -80,7 +82,7 @@ async def update_oss_settings(cfg: OssConfig, user=Depends(current_photographer)
 
 
 @router.post("/oss/test")
-async def test_oss_connection(user=Depends(current_photographer)):
+async def test_oss_connection(user=Depends(current_super)):
     if not oss_service.is_enabled():
         raise HTTPException(status_code=400, detail="OSS not enabled or not configured")
     try:

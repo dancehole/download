@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
-from ..auth import current_photographer
+from ..auth import current_photographer, current_super
 from .. import models, oss_service, counter_store
 from ..config import FILES_DIR, FILE_MAX_UPLOAD_SIZE_MB
 from ..response import ok, fail, share_file_to_dict
@@ -50,7 +50,7 @@ async def _stream_to_disk(upload: UploadFile, dest: str) -> int:
 async def upload_share_file(
     file: UploadFile = File(...),
     expire: int = Form(default=0),
-    user: dict = Depends(current_photographer),
+    user: dict = Depends(current_super),
 ):
     """上传共享文件。expire=0 表示永不过期（小时）。"""
     if not file or not file.filename:
@@ -93,18 +93,19 @@ async def upload_share_file(
 
 
 @router.get("/files")
-async def list_share_files(user: dict = Depends(current_photographer)):
+async def list_share_files(user: dict = Depends(current_super)):
+    """共享文件列表：仅超级管理员（相册管理员无权查看/编辑共享文件）。"""
     # 计数落库，保证后台看到的是最新数字
     await counter_store.flush()
-    rows = await models.list_share_files_by_user(user["pid"])
+    rows = await models.list_share_files_all()
     return ok([share_file_to_dict(r) for r in rows])
 
 
 @router.post("/files/{file_id}/share")
-async def regen_file_share(file_id: str, user: dict = Depends(current_photographer)):
+async def regen_file_share(file_id: str, user: dict = Depends(current_super)):
     """重新生成分享链接（旧链接立即失效）。"""
     f = await models.get_share_file_by_id(file_id)
-    if not f or f["created_by"] != user["pid"]:
+    if not f:
         return fail(404, "文件不存在")
     token = _gen_token()
     await models.update_share_file_token(f["id"], token)
@@ -112,12 +113,12 @@ async def regen_file_share(file_id: str, user: dict = Depends(current_photograph
 
 
 @router.delete("/files/{file_id}")
-async def delete_share_file(file_id: str, user: dict = Depends(current_photographer)):
+async def delete_share_file(file_id: str, user: dict = Depends(current_super)):
     """删除共享文件：OSS 对象 + 本地文件 + 数据库记录。"""
     if "/" in file_id or ".." in file_id:
         return fail(400, "无效 ID")
     f = await models.get_share_file_by_id(file_id)
-    if not f or f["created_by"] != user["pid"]:
+    if not f:
         return fail(404, "文件不存在")
 
     if oss_service.is_enabled() and f.get("oss_key"):

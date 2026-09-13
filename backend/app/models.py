@@ -11,6 +11,214 @@ async def get_photographer_by_username(username: str):
             return await cur.fetchone()
 
 
+# ---------- 账号（角色 / 启用状态） ----------
+async def get_photographer_by_id(pid: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT * FROM photographer WHERE id=%s", (pid,))
+            return await cur.fetchone()
+
+
+async def list_photographers():
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id, username, role, is_active, created_at "
+                "FROM photographer ORDER BY (role='super') DESC, id ASC"
+            )
+            return await cur.fetchall()
+
+
+async def create_photographer(username: str, password_hash: str, role: str = "album"):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO photographer (username, password_hash, role, is_active) "
+                "VALUES (%s, %s, %s, 1)",
+                (username, password_hash, role),
+            )
+            await conn.commit()
+            return cur.lastrowid
+
+
+async def update_photographer_password(pid: int, password_hash: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE photographer SET password_hash=%s WHERE id=%s", (password_hash, pid)
+            )
+            await conn.commit()
+
+
+async def set_photographer_role(pid: int, role: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("UPDATE photographer SET role=%s WHERE id=%s", (role, pid))
+            await conn.commit()
+
+
+async def set_photographer_active(pid: int, active: bool):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE photographer SET is_active=%s WHERE id=%s", (1 if active else 0, pid)
+            )
+            await conn.commit()
+
+
+async def delete_photographer(pid: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("DELETE FROM photographer WHERE id=%s", (pid,))
+            await conn.commit()
+
+
+async def count_active_supers(exclude_pid: int = None) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            if exclude_pid is None:
+                await cur.execute(
+                    "SELECT COUNT(*) AS c FROM photographer WHERE role='super' AND is_active=1"
+                )
+            else:
+                await cur.execute(
+                    "SELECT COUNT(*) AS c FROM photographer WHERE role='super' AND is_active=1 "
+                    "AND id<>%s",
+                    (exclude_pid,),
+                )
+            return (await cur.fetchone())["c"]
+
+
+async def count_owned_records(pid: int) -> dict:
+    """统计账号名下创建的相册 / 共享文件数量（用于删除前的安全校验）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT COUNT(*) AS c FROM event WHERE created_by=%s", (pid,))
+            events = (await cur.fetchone())["c"]
+            await cur.execute("SELECT COUNT(*) AS c FROM share_file WHERE created_by=%s", (pid,))
+            files = (await cur.fetchone())["c"]
+    return {"events": events, "files": files}
+
+
+# ---------- 相册授权（ACL：账号 ↔ 相册 多对多） ----------
+async def list_acl_event_pks(pid: int) -> set:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT event_id FROM album_admin_acl WHERE photographer_id=%s", (pid,)
+            )
+            rows = await cur.fetchall()
+    return {r["event_id"] for r in rows}
+
+
+async def list_acl_for_photographer(pid: int):
+    """某账号被授权的相册列表。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT e.event_id, e.event_name FROM album_admin_acl a "
+                "JOIN event e ON e.id = a.event_id "
+                "WHERE a.photographer_id=%s ORDER BY e.created_at DESC",
+                (pid,),
+            )
+            return await cur.fetchall()
+
+
+async def list_acl_for_event(event_pk: int):
+    """某相册下的管理员账号列表。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT p.id, p.username, p.is_active, a.created_at FROM album_admin_acl a "
+                "JOIN photographer p ON p.id = a.photographer_id "
+                "WHERE a.event_id=%s ORDER BY a.created_at ASC",
+                (event_pk,),
+            )
+            return await cur.fetchall()
+
+
+async def grant_event(photographer_id: int, event_pk: int, granted_by: int = None):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "INSERT IGNORE INTO album_admin_acl (photographer_id, event_id, granted_by) "
+                "VALUES (%s, %s, %s)",
+                (photographer_id, event_pk, granted_by),
+            )
+            await conn.commit()
+
+
+async def revoke_event(photographer_id: int, event_pk: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM album_admin_acl WHERE photographer_id=%s AND event_id=%s",
+                (photographer_id, event_pk),
+            )
+            await conn.commit()
+
+
+async def set_photographer_acl(photographer_id: int, event_pks: list, granted_by: int = None):
+    """整体替换某账号的授权相册集合（先删后插，保证与前端勾选一致）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM album_admin_acl WHERE photographer_id=%s", (photographer_id,)
+            )
+            if event_pks:
+                await cur.executemany(
+                    "INSERT IGNORE INTO album_admin_acl (photographer_id, event_id, granted_by) "
+                    "VALUES (%s, %s, %s)",
+                    [(photographer_id, pk, granted_by) for pk in event_pks],
+                )
+            await conn.commit()
+
+
+async def is_event_granted(pid: int, event_pk: int) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT 1 AS ok FROM album_admin_acl WHERE photographer_id=%s AND event_id=%s",
+                (pid, event_pk),
+            )
+            return (await cur.fetchone()) is not None
+
+
+async def can_manage_event(user: dict, ev) -> bool:
+    """当前账号能否管理该相册：超级管理员全部可管；相册管理员仅限被授权相册。"""
+    if not ev:
+        return False
+    if (user or {}).get("role") == "super":
+        return True
+    return await is_event_granted(user.get("pid"), ev["id"])
+
+
+async def get_manageable_event(event_id: str, user: dict):
+    """取出相册并校验权限；无权限一律返回 None（对外表现为「不存在」，避免探测）。"""
+    ev = await get_event_by_id(event_id)
+    if not ev:
+        return None
+    if not await can_manage_event(user, ev):
+        return None
+    return ev
+
+
 # ---------- 活动 ----------
 async def create_event(event_id: str, event_name: str, share_token: str, created_by: int,
                        preview_size: int = 640, use_oss: bool = True, expires_at=None):
@@ -32,7 +240,11 @@ async def get_event_by_id(event_id: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT * FROM event WHERE event_id=%s", (event_id,))
+            await cur.execute(
+                "SELECT e.*, p.username AS owner_name FROM event e "
+                "LEFT JOIN photographer p ON p.id = e.created_by WHERE e.event_id=%s",
+                (event_id,),
+            )
             return await cur.fetchone()
 
 
@@ -59,6 +271,34 @@ async def list_events_by_user(created_by: int):
             await cur.execute(
                 "SELECT * FROM event WHERE created_by=%s ORDER BY created_at DESC",
                 (created_by,),
+            )
+            return await cur.fetchall()
+
+
+async def list_all_events():
+    """超级管理员：全部相册（附创建者用户名）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT e.*, p.username AS owner_name FROM event e "
+                "LEFT JOIN photographer p ON p.id = e.created_by "
+                "ORDER BY e.created_at DESC"
+            )
+            return await cur.fetchall()
+
+
+async def list_events_for_photographer(pid: int):
+    """相册管理员：仅被授权的相册。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT e.*, p.username AS owner_name FROM event e "
+                "LEFT JOIN photographer p ON p.id = e.created_by "
+                "INNER JOIN album_admin_acl a ON a.event_id = e.id AND a.photographer_id = %s "
+                "ORDER BY e.created_at DESC",
+                (pid,),
             )
             return await cur.fetchall()
 
@@ -433,6 +673,15 @@ async def list_share_files_by_user(created_by: int):
                 "SELECT * FROM share_file WHERE created_by=%s ORDER BY created_at DESC",
                 (created_by,),
             )
+            return await cur.fetchall()
+
+
+async def list_share_files_all():
+    """超级管理员：全部共享文件（相册管理员无权访问）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT * FROM share_file ORDER BY created_at DESC")
             return await cur.fetchall()
 
 
