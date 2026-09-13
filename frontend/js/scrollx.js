@@ -17,7 +17,8 @@
     const DRAG_THRESHOLD = opts.dragThreshold || 6;
 
     let dragging = null;
-    let suppressClick = false;
+    let movedAtLastDown = false;
+    let clearTimer = null;
 
     // 判断「鼠标设备」：优先看媒体查询，(hover:none/pointer:coarse) 的环境
     // （部分内嵌浏览器、无鼠标设备上报异常的桌面环境）再用 maxTouchPoints 兜底，
@@ -55,44 +56,69 @@
     if (next) next.addEventListener("click", function () { stepBy(1); });
 
     // ── 鼠标拖拽 ──
-    el.addEventListener("pointerdown", function (e) {
-      if (e.pointerType === "touch") return;      // 触摸交给浏览器原生滑动
-      if (e.button !== 0) return;
-      dragging = { x: e.clientX, sl: el.scrollLeft, moved: false, id: e.pointerId };
-      el.classList.add("sx-dragging");
-      try { el.setPointerCapture(e.pointerId); } catch (_) {}
-    });
-
-    el.addEventListener("pointermove", function (e) {
+    // 注意：这里 **不能** 用 el.setPointerCapture()。一旦在 pointerdown 时捕获指针，
+    // 浏览器会把后续的 pointerup / click 重定向到捕获元素（也就是这个容器），
+    // 分类按钮自己的 click 监听永远收不到事件 —— 表现就是「点分类没反应、不高亮、
+    // 也不筛选照片」（2026-09-14 用户反馈的真实 bug）。改用 document 级
+    // pointermove/pointerup 监听，效果相同，且不会改事件目标。
+    function onDragMove(e) {
       if (!dragging || e.pointerId !== dragging.id) return;
       const dx = e.clientX - dragging.x;
       if (!dragging.moved && Math.abs(dx) < DRAG_THRESHOLD) return;
-      dragging.moved = true;
+      if (!dragging.moved) {
+        dragging.moved = true;
+        // 「开始拖拽」才加 .sx-dragging —— 它带有 .tag-pill{pointer-events:none}，
+        // 如果在 pointerdown 时就加，鼠标一按下去分类按钮立刻变成「不可点」，
+        // 结果 pointerup / click 都落到容器上，按钮的 click 永远收不到
+        // （点分类没反应、不高亮、不筛选的另一个原因，2026-09-14 修复）。
+        el.classList.add("sx-dragging");
+      }
       el.scrollLeft = dragging.sl - dx;
       if (e.cancelable) e.preventDefault();
-    });
+    }
 
     function endDrag(e) {
       if (!dragging) return;
       if (e && e.pointerId !== undefined && e.pointerId !== dragging.id) return;
-      if (dragging.moved) {
-        suppressClick = true;
-        setTimeout(function () { suppressClick = false; }, 0);
-      }
+      const moved = dragging.moved;
       dragging = null;
       el.classList.remove("sx-dragging");
+      document.removeEventListener("pointermove", onDragMove);
+      document.removeEventListener("pointerup", endDrag);
+      document.removeEventListener("pointercancel", endDrag);
+      global.removeEventListener("blur", endDrag);
+      if (moved) {
+        // 拖拽后的这一下 click 吞掉，避免「拖动 = 误点分类」；
+        // 同时留一个兜底定时器：若这一下 click 落在容器外（没有命中抑制逻辑），
+        // 300ms 后自动解除，免得吞掉用户下一次正常点击。
+        movedAtLastDown = true;
+        clearTimeout(clearTimer);
+        clearTimer = setTimeout(function () { movedAtLastDown = false; }, 300);
+      }
       update();
     }
-    el.addEventListener("pointerup", endDrag);
-    el.addEventListener("pointercancel", endDrag);
-    el.addEventListener("lostpointercapture", endDrag);
+
+    el.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "touch") return;      // 触摸交给浏览器原生滑动
+      if (e.button !== 0) return;
+      // 新的一次按下 = 新手势，清掉上一次拖拽的「吞 click」标记，
+      // 保证紧接着的一次真实点击一定生效（哪怕距上一次拖拽只有几毫秒）
+      movedAtLastDown = false;
+      clearTimeout(clearTimer);
+      dragging = { x: e.clientX, sl: el.scrollLeft, moved: false, id: e.pointerId };
+      document.addEventListener("pointermove", onDragMove);
+      document.addEventListener("pointerup", endDrag);
+      document.addEventListener("pointercancel", endDrag);
+      global.addEventListener("blur", endDrag);
+    });
 
     // 拖拽结束的这一下 click 不要触发分类切换
     el.addEventListener("click", function (e) {
-      if (suppressClick) {
-        e.stopPropagation();
-        e.preventDefault();
-      }
+      if (!movedAtLastDown) return;
+      movedAtLastDown = false;
+      clearTimeout(clearTimer);
+      e.stopPropagation();
+      e.preventDefault();
     }, true);
 
     // ── 滚轮横向 ──
