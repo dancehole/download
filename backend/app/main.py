@@ -8,7 +8,8 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR, APP_PREFIX
 from .db import init_db, close_pool
-from .routers import auth, events, upload, share, files as files_router, settings as settings_router
+from .routers import (auth, events, upload, share, files as files_router,
+                      settings as settings_router, users as users_router)
 from .response import ok
 from . import oss_service, counter_store
 from .models import get_setting
@@ -64,6 +65,7 @@ app.include_router(upload.router, prefix=p + "/api")
 app.include_router(share.router, prefix=p + "/api")
 app.include_router(files_router.router, prefix=p + "/api")
 app.include_router(settings_router.router, prefix=p)
+app.include_router(users_router.router, prefix=p + "/api")
 
 
 @app.get(p + "/api/health")

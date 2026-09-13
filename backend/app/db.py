@@ -48,9 +48,21 @@ async def init_db():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     username VARCHAR(64) NOT NULL UNIQUE,
                     password_hash VARCHAR(128) NOT NULL,
+                    role VARCHAR(16) NOT NULL DEFAULT 'album',
+                    is_active TINYINT(1) NOT NULL DEFAULT 1,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
+            # 兼容已存在的数据库：photographer 增加角色与启用状态
+            # role: super = 超级管理员（全部相册 + 共享文件 + 用户管理）；album = 相册管理员（仅被授权相册）
+            for col_def in [
+                "ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'album' AFTER password_hash",
+                "ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER role",
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE photographer {col_def}")
+                except Exception:
+                    pass
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS event (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -170,6 +182,25 @@ async def init_db():
                 except Exception:
                     pass
 
+            # 相册管理员授权表（账号 ↔ 相册 多对多）
+            # 一个账号可被授权多个相册；一个相册也可有多个管理员账号。
+            # 相册被删除时授权行自动级联清理。
+            await cur.execute("""
+                CREATE TABLE IF NOT EXISTS album_admin_acl (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    photographer_id INT NOT NULL,
+                    event_id INT NOT NULL,
+                    granted_by INT DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_acl_admin_event (photographer_id, event_id),
+                    INDEX idx_acl_event (event_id),
+                    CONSTRAINT fk_acl_photographer
+                        FOREIGN KEY (photographer_id) REFERENCES photographer(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_acl_event
+                        FOREIGN KEY (event_id) REFERENCES event(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+
             # 加速过期扫描
             for idx_sql, idx_name in [
                 ("ALTER TABLE event ADD INDEX idx_event_expiry (expires_at, purged_at)",
@@ -190,7 +221,21 @@ async def init_db():
             row = await cur.fetchone()
             if not row:
                 await cur.execute(
-                    "INSERT IGNORE INTO photographer (username, password_hash) VALUES (%s, %s)",
+                    "INSERT IGNORE INTO photographer (username, password_hash, role, is_active) "
+                    "VALUES (%s, %s, 'super', 1)",
                     (DEFAULT_ADMIN_USER, hash_password(DEFAULT_ADMIN_PASSWORD)),
+                )
+            # 默认超管账号固定为超级管理员
+            await cur.execute(
+                "UPDATE photographer SET role='super', is_active=1 WHERE username=%s",
+                (DEFAULT_ADMIN_USER,),
+            )
+            # 兜底：库里必须至少有一个可用的超级管理员
+            await cur.execute(
+                "SELECT COUNT(*) AS c FROM photographer WHERE role='super' AND is_active=1"
+            )
+            if (await cur.fetchone())["c"] == 0:
+                await cur.execute(
+                    "UPDATE photographer SET role='super', is_active=1 ORDER BY id ASC LIMIT 1"
                 )
             await conn.commit()

@@ -40,8 +40,8 @@ async def upload_photos(
     files: list[UploadFile] = File(...),
     user: dict = Depends(current_photographer),
 ):
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
     if not files:
         return fail(400, "未选择文件")
@@ -165,8 +165,8 @@ async def upload_raf(
     user: dict = Depends(current_photographer),
 ):
     """单独上传 RAF 数字底片，按文件名匹配已上传的 JPG 照片。"""
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
     raf_dir = os.path.join(STORAGE_DIR, ev["event_id"], "raf")
     os.makedirs(raf_dir, exist_ok=True)

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ..auth import current_photographer
+from ..auth import current_photographer, current_super
 from .. import models, oss_service, counter_store, cleanup_service
 from ..response import ok, fail, event_to_dict, format_size
 
@@ -48,7 +48,8 @@ class CreateEventIn(BaseModel):
 
 
 @router.post("/events")
-async def create_event(body: CreateEventIn, user: dict = Depends(current_photographer)):
+async def create_event(body: CreateEventIn, user: dict = Depends(current_super)):
+    """新建相册：仅超级管理员（相册管理员只在被授权的相册内工作）。"""
     name = body.event_name.strip()
     if not name:
         return fail(400, "活动主题不能为空")
@@ -75,18 +76,27 @@ async def create_event(body: CreateEventIn, user: dict = Depends(current_photogr
 async def list_events(user: dict = Depends(current_photographer)):
     # 先把计数缓冲落库，保证后台看到的是最新数字
     await counter_store.flush()
-    rows = await models.list_events_by_user(user["pid"])
+    # 超级管理员：全部相册；相册管理员：仅被授权的相册
+    if user["role"] == "super":
+        rows = await models.list_all_events()
+    else:
+        rows = await models.list_events_for_photographer(user["pid"])
     return ok([event_to_dict(r) for r in rows])
 
 
 @router.get("/events/{event_id}")
 async def get_event(event_id: str, user: dict = Depends(current_photographer)):
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
     tags = await models.get_tags(ev["id"])
     data = event_to_dict(ev)
     data["tags"] = [{"tag": t["tag"], "tag_en": t.get("tag_en") or t["tag"], "count": t["cnt"]} for t in tags]
+    # 该相册的相册管理员账号列表（后台「相册管理员」区块用）
+    admins = await models.list_acl_for_event(ev["id"])
+    data["admins"] = [{"id": a["id"], "username": a["username"],
+                       "is_active": bool(a["is_active"])} for a in admins]
+    data["my_role"] = user["role"]
     # 本地存储占用（用于后台「文件占用 xx 空间」提示）
     size = cleanup_service.calculate_local_size(ev["event_id"])
     data["storage_size"] = size
@@ -102,8 +112,8 @@ class UpdateEventSettingsIn(BaseModel):
 
 @router.put("/events/{event_id}/settings")
 async def update_event_settings(event_id: str, body: UpdateEventSettingsIn, user: dict = Depends(current_photographer)):
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
 
     if body.expires_in_hours is not None:
@@ -131,8 +141,8 @@ async def rename_tag(event_id: str, body: RenameTagIn, user: dict = Depends(curr
     照片行：photo.id / photo.event_id 全程不变，已绑定的照片自动跟随新名称，
     不会解绑也不会丢图。若新名称在本相册已存在，两张标签的照片会合并为一类。
     """
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
 
     old_tag = (body.old_tag or "").strip()
@@ -172,8 +182,8 @@ async def rename_tag(event_id: str, body: RenameTagIn, user: dict = Depends(curr
 
 @router.post("/events/{event_id}/share")
 async def regen_share(event_id: str, user: dict = Depends(current_photographer)):
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
     token = _gen_token()
     await models.update_share_token(ev["id"], token)
@@ -183,8 +193,8 @@ async def regen_share(event_id: str, user: dict = Depends(current_photographer))
 @router.post("/events/{event_id}/clear-oss")
 async def clear_event_oss(event_id: str, user: dict = Depends(current_photographer)):
     """仅清空相册在 OSS 上的远程对象（本地文件保留）。"""
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
     n = cleanup_service.clear_oss(ev)
     if n == -1:
@@ -198,8 +208,8 @@ async def clear_event_oss(event_id: str, user: dict = Depends(current_photograph
 @router.post("/events/{event_id}/clear-local")
 async def clear_event_local(event_id: str, user: dict = Depends(current_photographer)):
     """仅删除相册的本地照片文件（OSS 保留）。删除后照片记录一并清空、分享页拦截。"""
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
     freed = cleanup_service.clear_local(ev)
     # 照片行随文件一起删除，条目保留为空壳（photo_count 归零）
@@ -211,8 +221,8 @@ async def clear_event_local(event_id: str, user: dict = Depends(current_photogra
 @router.delete("/events/{event_id}")
 async def delete_event(event_id: str, user: dict = Depends(current_photographer)):
     """彻底删除整个相册：OSS 远程对象、本地照片文件、数据库记录（空间与记录都清空）。"""
-    ev = await models.get_event_by_id(event_id)
-    if not ev or ev["created_by"] != user["pid"]:
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
         return fail(404, "活动不存在")
 
     result = await cleanup_service.delete_album(ev)
