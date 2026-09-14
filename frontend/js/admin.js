@@ -14,7 +14,13 @@
     me: null,          // 当前登录账号 {photographer_id, username, role, is_super}
     users: [],         // 账号列表（仅超级管理员加载）
     editUser: null,    // 正在编辑授权相册的账号
+    albumSettingsOpen: false, // 相册设置面板是否展开（默认收起，保持相册页纯净）
+    albumSeg: "basic",        // 相册设置内当前分段：basic | admins | cleanup
   };
+
+  // 相册设置面板的分段映射（顺序即标签顺序）
+  const SEG_TABS = { basic: "segTabBasic", admins: "segTabAdmins", cleanup: "segTabCleanup" };
+  const SEG_PANES = { basic: "segPaneBasic", admins: "segPaneAdmins", cleanup: "segPaneCleanup" };
 
   function isSuper() {
     return !!(state.me && (state.me.is_super || state.me.role === "super"));
@@ -82,7 +88,8 @@
     $("navFiles").hidden = !superUser;
     $("settingsBtn").hidden = !superUser;
     $("createBtn").hidden = !superUser;        // 相册管理员不能新建相册
-    $("albumAdminsCard").hidden = !superUser;  // 相册管理员区块仅超管可管
+    $("segTabAdmins").hidden = !superUser;     // 「相册管理员」分段仅超管可管
+    syncAlbumSeg();                            // 角色变化后校正当前分段（非超管不能停在 admins）
     const lbl = document.getElementById("currentUserLabel");
     if (lbl) {
       lbl.textContent = (state.me ? state.me.username : "") +
@@ -411,6 +418,9 @@
     try {
       const ev = await API.getEvent(eventId);
       state.currentEvent = ev;
+      // 每次进相册都回到「纯净」视图：面板收起 + 落在基本设置分段
+      setAlbumSettingsOpen(false);
+      setAlbumSeg("basic");
       // 相册管理员区块需要账号列表（仅超管有权限，放在详情打开后加载）
       if (isSuper() && state.users.length === 0) await loadUsers();
       renderDetail();
@@ -446,6 +456,9 @@
     } else {
       storageEl.textContent = I18N.t("storage_none");
     }
+
+    // 「相册设置」折叠头右侧摘要（收起时也能一眼看到过期时间 / 空间占用）
+    updateAlbumSettingsSummary(ev);
 
     // 已清理提示（本地照片已删 / OSS 已清空）
     const notice = $("purgedNotice");
@@ -1141,13 +1154,53 @@
     }
   }
 
+  // ===== 相册详情：相册设置折叠面板（基本设置 / 相册管理员 / 空间与清理） =====
+  // 设计目标：相册页默认只保留「详情头 + 分享链接 + 上传 + 照片」，配置类内容全部收进这里
+  function setAlbumSettingsOpen(open) {
+    state.albumSettingsOpen = !!open;
+    $("albumSettingsBody").hidden = !state.albumSettingsOpen;
+    $("albumSettingsToggle").setAttribute("aria-expanded", state.albumSettingsOpen ? "true" : "false");
+  }
+
+  // 按 state.albumSeg 同步标签高亮 / 分段显隐（并校正非法分段：非超管不能停在 admins）
+  function syncAlbumSeg() {
+    if (!SEG_TABS[state.albumSeg]) state.albumSeg = "basic";
+    if (state.albumSeg === "admins" && !isSuper()) state.albumSeg = "basic";
+    Object.keys(SEG_TABS).forEach((seg) => {
+      const tab = $(SEG_TABS[seg]);
+      const pane = $(SEG_PANES[seg]);
+      if (!tab || !pane) return;
+      const on = seg === state.albumSeg;
+      tab.classList.toggle("active", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+      pane.hidden = !on;
+    });
+  }
+
+  function setAlbumSeg(seg) {
+    state.albumSeg = SEG_TABS[seg] ? seg : "basic";
+    syncAlbumSeg();
+  }
+
+  // 收起状态下也能看到关键信息：过期时间 + 空间占用
+  function updateAlbumSettingsSummary(ev) {
+    const el = $("albumSettingsSummary");
+    if (!el || !ev) return;
+    const parts = [ev.expires_at_text ? I18N.t("expire") + " " + ev.expires_at_text : I18N.t("expire_never")];
+    if (ev.local_cleared) parts.push(I18N.t("storage_local_cleared"));
+    else if (ev.oss_cleared) parts.push(I18N.t("storage_oss_cleared", { size: ev.storage_size_text || I18N.t("storage_none") }));
+    else if (ev.storage_size) parts.push(I18N.t("storage_occupied", { size: ev.storage_size_text }));
+    else parts.push(I18N.t("storage_none"));
+    el.textContent = parts.join(" · ");
+  }
+
   // ===== 相册详情：相册管理员区块（仅超级管理员） =====
   function renderAlbumAdmins() {
-    const card = $("albumAdminsCard");
     const ev = state.currentEvent;
-    if (!card || !ev) return;
-    if (!isSuper()) { card.hidden = true; return; }
-    card.hidden = false;
+    if (!ev) return;
+    $("segTabAdmins").hidden = !isSuper();
+    syncAlbumSeg();
+    if (!isSuper()) return;
 
     const admins = ev.admins || [];
     const list = $("albumAdminsList");
@@ -1298,6 +1351,12 @@
     $("saveEventSettingsBtn").addEventListener("click", saveEventSettings);
     $("clearOssBtn").addEventListener("click", clearOss);
     $("clearLocalBtn").addEventListener("click", clearLocal);
+
+    // 相册设置折叠面板：展开/收起 + 分段切换
+    $("albumSettingsToggle").addEventListener("click", () => setAlbumSettingsOpen(!state.albumSettingsOpen));
+    Object.keys(SEG_TABS).forEach((seg) => {
+      $(SEG_TABS[seg]).addEventListener("click", () => setAlbumSeg(seg));
+    });
 
     setupDropzone("dropzoneJpg", "jpgInput", "jpgFiles", "jpg");
     setupDropzone("dropzoneRaf", "rafInput", "rafFiles", "raf");

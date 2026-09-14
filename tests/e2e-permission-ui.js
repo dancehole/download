@@ -13,6 +13,7 @@ const CHROME_DIR = "/root/.agent-browser/browsers";
 const ROOT = "http://127.0.0.1:8001/download";
 const API = ROOT + "/api";
 const ADMIN_PW = process.env.ADMIN_PW;
+const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const TEST_USER = "e2e_ui_admin";
 const TEMP_ALBUM = "e2e前端权限测试相册";
 
@@ -124,7 +125,7 @@ async function api(method, path, token, body) {
   const chrome = startChrome(); let cdp;
   try {
     // ───── 准备：超管 token + 临时相册，清理上次残留 ─────
-    let r = await api("POST", "/auth/login", null, { username: "admin", password: ADMIN_PW });
+    let r = await api("POST", "/auth/login", null, { username: ADMIN_USER, password: ADMIN_PW });
     const superToken = r.data && r.data.token;
     if (!superToken) throw new Error("admin 登录失败: " + JSON.stringify(r));
     r = await api("GET", "/events", superToken);
@@ -145,7 +146,7 @@ async function api(method, path, token, body) {
     await waitFor(cdp, `!document.getElementById("authScreen").hidden`, 15000, "登录页");
 
     // ───── 1. 超管走 UI 登录 ─────
-    await type(cdp, "#loginUser", "admin");
+    await type(cdp, "#loginUser", ADMIN_USER);
     await type(cdp, "#loginPass", ADMIN_PW);
     await click(cdp, "#loginSubmit");
     await waitFor(cdp, `!document.getElementById("app").hidden`, 15000, "进入后台");
@@ -154,7 +155,7 @@ async function api(method, path, token, body) {
     check("超管看到「共享文件」入口", !(await cdp.eval(`document.getElementById("navFiles").hidden`)));
     check("超管看到「设置」入口", !(await cdp.eval(`document.getElementById("settingsBtn").hidden`)));
     check("超管看到「新建」按钮", !(await cdp.eval(`document.getElementById("createBtn").hidden`)));
-    check("顶栏显示当前账号+角色", /admin.*超级管理员/.test(await cdp.eval(`document.getElementById("currentUserLabel").textContent`)),
+    check("顶栏显示当前账号+角色", new RegExp(ADMIN_USER + ".*超级管理员").test(await cdp.eval(`document.getElementById("currentUserLabel").textContent`)),
           await cdp.eval(`document.getElementById("currentUserLabel").textContent`));
     check("超管相册列表能看到临时相册", (await cdp.eval(`document.querySelectorAll('.event-card[data-id="${EID}"]').length`)) === 1);
 
@@ -198,10 +199,13 @@ async function api(method, path, token, body) {
     await waitFor(cdp, `document.querySelectorAll('.event-card[data-id="${EID}"]').length === 1`, 10000);
     await click(cdp, `[data-id="${EID}"] [data-act="enter"]`);
     await waitFor(cdp, `!document.getElementById("viewDetail").hidden && document.getElementById("detailId").textContent.includes("${EID}")`, 15000, "详情页");
-    check("相册详情显示「相册管理员」区块", !(await cdp.eval(`document.getElementById("albumAdminsCard").hidden`)));
+    // 相册设置面板默认收起 → 展开并切到「相册管理员」分段（2026-09-14 折叠改造后）
+    await click(cdp, "#albumSettingsToggle");
+    await click(cdp, "#segTabAdmins");
+    check("相册详情显示「相册管理员」分段标签", !(await cdp.eval(`document.getElementById("segTabAdmins").hidden`)));
     check("区块里列出刚创建的管理员", /e2e_ui_admin/.test(await cdp.eval(`document.getElementById("albumAdminsList").textContent`)),
           await cdp.eval(`document.getElementById("albumAdminsList").textContent`));
-    check("显示归属账号", /admin/.test(await cdp.eval(`document.getElementById("albumOwnerInfo").textContent`)),
+    check("显示归属账号", new RegExp(ADMIN_USER).test(await cdp.eval(`document.getElementById("albumOwnerInfo").textContent`)),
           await cdp.eval(`document.getElementById("albumOwnerInfo").textContent`));
 
     // 移除授权（confirm 自动确认）→ 区块变空且下拉出现该账号
@@ -267,7 +271,7 @@ async function api(method, path, token, body) {
     await click(cdp, `[data-id="${EID}"] [data-act="enter"]`);
     await waitFor(cdp, `document.getElementById("detailId").textContent.includes("${EID}")`, 15000, "相册详情");
     check("相册管理员能打开被授权相册", true);
-    check("相册管理员看不到「相册管理员」区块", await cdp.eval(`document.getElementById("albumAdminsCard").hidden`));
+    check("相册管理员看不到「相册管理员」分段", await cdp.eval(`document.getElementById("segTabAdmins").hidden`));
     check("相册管理员能上传（上传区可见）", (await cdp.eval(`document.getElementById("uploadZone").style.display`)) !== "none");
 
     // 未授权相册 ID → 打不开
