@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from ..auth import current_photographer, current_super
 from .. import models, oss_service, counter_store
 from ..config import FILES_DIR, FILE_MAX_UPLOAD_SIZE_MB
-from ..response import ok, fail, share_file_to_dict
+from ..response import ok, fail, fail_http, share_file_to_dict
 
 router = APIRouter()
 
@@ -194,9 +194,9 @@ async def share_file_info(token: str):
         return fail(404, "文件不存在或链接已失效")
     # 过期 / 已清理：只失效链接，本地文件与 OSS 对象都保留（由管理员手动释放）
     if f.get("purged_at"):
-        return fail(410, "文件已过期并被清理，请联系管理员获取")
+        return fail_http(410, "文件已过期并被清理，请联系管理员获取")
     if _is_expired(f):
-        return fail(410, "文件分享链接已过期，请联系管理员获取")
+        return fail_http(410, "文件分享链接已过期，请联系管理员获取")
     await counter_store.incr("sf", f["id"], "view")
     return ok(share_file_to_dict(f))
 
@@ -208,9 +208,9 @@ async def share_file_download(token: str):
     if not f:
         return fail(404, "文件不存在或链接已失效")
     if f.get("purged_at"):
-        return fail(410, "文件已过期并被清理，请联系管理员获取")
+        return fail_http(410, "文件已过期并被清理，请联系管理员获取")
     if _is_expired(f):
-        return fail(410, "文件分享链接已过期，请联系管理员获取")
+        return fail_http(410, "文件分享链接已过期，请联系管理员获取")
 
     await counter_store.incr("sf", f["id"], "dl")
 

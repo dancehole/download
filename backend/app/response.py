@@ -1,4 +1,7 @@
 from datetime import datetime
+
+from fastapi.responses import JSONResponse
+
 from . import oss_service
 
 
@@ -8,6 +11,17 @@ def ok(data=None, msg="ok"):
 
 def fail(code: int, msg: str):
     return {"code": code, "msg": msg, "data": None}
+
+
+def fail_http(code: int, msg: str):
+    """业务失败 + **真实 HTTP 状态码**。
+
+    项目约定是「业务失败 HTTP 200 + body.code」，管理端 API 这样最省事；
+    但公开分享端点（如 /share/{token}/photos/{id}/original、共享文件下载）会被
+    浏览器直接打开——window.open 拿到 200 的 {"code":410} 会把它当成文件下载，
+    图片位则是碎图，访问者完全看不出「链接已过期」。这类端点必须给出真实状态码。
+    """
+    return JSONResponse(status_code=code, content=fail(code, msg))
 
 
 def _dt(v):

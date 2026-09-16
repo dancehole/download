@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
 from .. import models, counter_store
-from ..response import ok, fail, event_to_dict, photo_to_dict
+from ..response import ok, fail, fail_http, event_to_dict, photo_to_dict
 
 router = APIRouter()
 
@@ -66,7 +66,7 @@ async def share_info(token: str):
         return fail(404, "相册不存在或链接已失效")
     blocked = _block_reason(ev)
     if blocked:
-        return fail(410, blocked)
+        return fail_http(410, blocked)
     await counter_store.incr("ev", ev["id"], "view")
     tags = await models.get_tags(ev["id"])
     data = event_to_dict(ev)
@@ -81,7 +81,7 @@ async def share_photos(token: str, tag: str = "", page: int = 1, size: int = 30)
         return fail(404, "相册不存在或链接已失效")
     blocked = _block_reason(ev)
     if blocked:
-        return fail(410, blocked)
+        return fail_http(410, blocked)
     size = max(1, min(int(size), 100))
     page = max(1, int(page))
     tag = tag.strip() or None
@@ -99,7 +99,7 @@ async def share_preview(token: str, photo_id: int):
     ev, p = await _resolve_photo(token, photo_id)
     blocked = _block_reason(ev)
     if blocked:
-        return fail(410, blocked)
+        return fail_http(410, blocked)
     if not p:
         return fail(404, "照片不存在")
     if not os.path.exists(p["preview_path"]):
@@ -113,7 +113,7 @@ async def share_original(token: str, photo_id: int, download: int = 0):
     ev, p = await _resolve_photo(token, photo_id)
     blocked = _block_reason(ev)
     if blocked:
-        return fail(410, blocked)
+        return fail_http(410, blocked)
     if not p:
         return fail(404, "照片不存在")
     if not os.path.exists(p["original_path"]):
@@ -130,7 +130,7 @@ async def share_raf(token: str, photo_id: int, download: int = 1):
     ev, p = await _resolve_photo(token, photo_id)
     blocked = _block_reason(ev)
     if blocked:
-        return fail(410, blocked)
+        return fail_http(410, blocked)
     if not p:
         return fail(404, "照片不存在")
     if not p["raf_path"] or not os.path.exists(p["raf_path"]):
