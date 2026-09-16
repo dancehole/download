@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -6,19 +7,31 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
-from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR, APP_PREFIX
+from .config import FRONTEND_DIR, CORS_ORIGINS, STORAGE_DIR, FILES_DIR, APP_PREFIX
 from .db import init_db, close_pool
 from .routers import (auth, events, upload, share, files as files_router,
                       settings as settings_router, users as users_router)
 from .response import ok
 from . import oss_service, counter_store
-from .models import get_setting
+from .models import get_setting, heal_share_file_paths
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(STORAGE_DIR, exist_ok=True)
     await init_db()
+
+    # 启动自愈：share_file.storage_path 指向已失效的旧路径（项目改名遗留）时，
+    # 改回 FILES_DIR/{file_id}，从根上堵住「记录删了、文件留在磁盘」的孤儿成因。
+    try:
+        for h in await heal_share_file_paths(FILES_DIR):
+            logger.info("heal: share_file#%s storage_path %r -> %r",
+                        h["id"], h["old"] or "(空)", h["new"])
+    except Exception as e:      # 自愈失败不能拖垮启动
+        logger.warning("heal_share_file_paths failed: %s", e)
 
     # 从数据库加载 OSS 配置
     oss_cfg = {}

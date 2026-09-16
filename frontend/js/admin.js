@@ -225,13 +225,17 @@
     }
   }
 
-  // 相册卡片上的有效期状态：已清理 > 已过期 > 具体时间 > 永不过期
+  // 相册卡片上的有效期状态：本地已清空 > 已过期 > 具体时间 > 永不过期
+  // 注意：只有「本地照片已删」(local_cleared) 才是空壳；仅清空 OSS 不影响浏览
   function expireChipHtml(ev) {
-    if (ev.purged) {
+    if (ev.local_cleared) {
       return `<span class="chip chip-danger">${I18N.t("album_purged")}</span>`;
     }
     if (ev.expired) {
       return `<span class="chip chip-warn">${I18N.t("expired")}</span>`;
+    }
+    if (ev.oss_cleared) {
+      return `<span class="chip chip-soft">${I18N.t("cleaned_oss_chip")}</span>`;
     }
     if (ev.expires_at_text) {
       return `<span class="chip chip-soft">${I18N.t("expire")} ${escapeHtml(ev.expires_at_text)}</span>`;
@@ -246,7 +250,7 @@
       return;
     }
     grid.innerHTML = state.events.map((ev) => `
-      <div class="event-card ${ev.purged ? "is-purged" : ""}" data-id="${escapeHtml(ev.event_id)}">
+      <div class="event-card ${ev.local_cleared ? "is-purged" : ""}" data-id="${escapeHtml(ev.event_id)}">
         <h3>${escapeHtml(ev.event_name)}</h3>
         <div class="meta">
           <span class="chip mono">ID: ${escapeHtml(ev.event_id)}</span>
@@ -368,8 +372,14 @@
   async function deleteSharedFile(fileId) {
     if (!confirm(I18N.t("delete_file_confirm"))) return;
     try {
-      await API.deleteFile(fileId);
-      toast(I18N.t("delete_file_success"), "ok");
+      const r = await API.deleteFile(fileId);
+      if (r && r.success === false) {
+        // 数据库记录已删，但本地文件 / OSS 对象没删干净 → 必须让管理员看到
+        const detail = [r.local_error, r.oss_error].filter(Boolean).join("；");
+        toast(I18N.t("delete_file_partial", { detail: detail }), "err");
+      } else {
+        toast(I18N.t("delete_file_success"), "ok");
+      }
       await loadFiles();
     } catch (e) {
       toast((e && e.msg) || I18N.t("delete_file_failed"), "err");
@@ -443,7 +453,9 @@
     $("detailExpire").textContent = ev.expires_at_text
       ? I18N.t("expire") + " " + ev.expires_at_text
       : I18N.t("expire_never");
-    $("detailExpire").className = "chip" + (ev.purged ? " chip-danger" : (ev.expired ? " chip-warn" : " chip-soft"));
+    // 危险的红色只留给「本地照片已被删除」的空壳相册；
+    // 仅清空 OSS（省空间）不影响照片浏览，也不算「相册已清理」
+    $("detailExpire").className = "chip" + (ev.local_cleared ? " chip-danger" : (ev.expired ? " chip-warn" : " chip-soft"));
 
     // 空间占用提示（提醒“文件占用 xx 空间”）
     const storageEl = $("storageInfo");
@@ -486,7 +498,9 @@
     $("eventUseOss").checked = ev.use_oss !== false;
     // 默认「保持当前设置」，避免保存其他设置时误改过期时间
     $("eventExpireSelect").value = "keep";
-    $("eventExpireSelect").disabled = !!ev.purged;
+    // 只有「本地照片已删」的空壳才禁止改设置（与上传区一致）；
+    // 之前用 ev.purged（含 oss_cleared）会导致清空 OSS 后无法再修改过期时间
+    $("eventExpireSelect").disabled = !!ev.local_cleared;
     populateTagSuggestions(ev);
     renderAlbumAdmins();
   }

@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from .db import get_pool
 
@@ -380,6 +381,20 @@ async def clear_event_oss_keys(event_pk: int):
             await conn.commit()
 
 
+async def count_event_oss_photos(event_pk: int) -> int:
+    """相册内仍指向 OSS 的照片数（用于判断「清空 OSS」是否真的有事可做）。"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT COUNT(*) AS c FROM photo WHERE event_id=%s AND "
+                "(oss_original_key IS NOT NULL OR oss_preview_key IS NOT NULL "
+                " OR oss_raf_key IS NOT NULL)",
+                (event_pk,),
+            )
+            return (await cur.fetchone())["c"]
+
+
 async def delete_photos_by_event(event_pk: int) -> int:
     """清空相册内所有照片记录（文件本体由清理流程先行删除）。"""
     pool = await get_pool()
@@ -710,39 +725,58 @@ async def increment_share_file_counter(pk: int, field: str, n: int = 1):
             await conn.commit()
 
 
-async def list_expired_share_files(limit: int = 50):
-    """取出已过期且尚未清理的共享文件。"""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT * FROM share_file WHERE expires_at IS NOT NULL "
-                "AND expires_at <= NOW() AND purged_at IS NULL "
-                "ORDER BY expires_at ASC LIMIT %s",
-                (limit,),
-            )
-            return await cur.fetchall()
-
-
-async def mark_share_file_purged(pk: int):
-    """标记共享文件已清理：清掉存储位置，列表条目保留为空壳。"""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE share_file SET storage_path='', oss_key=NULL, purged_at=NOW() "
-                "WHERE id=%s",
-                (pk,),
-            )
-            await conn.commit()
-
-
 async def delete_share_file(pk: int):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute("DELETE FROM share_file WHERE id=%s", (pk,))
             await conn.commit()
+
+
+# 说明：早期版本带「过期自动清理」逻辑（list_expired_share_files /
+# mark_share_file_purged 定时把过期文件的存储位置抹掉）。现在过期只让链接
+# 失效、**不删文件**，存储释放一律由管理员手动触发，因此那两个函数已删除。
+# 数据库里的 purged_at 列与 files.py 的读取保留，用于兼容历史数据。
+
+
+async def heal_share_file_paths(files_dir: str) -> list:
+    """启动自愈：share_file.storage_path 失效时改回 files_dir/{file_id}。
+
+    成因：记录里存的是上传时的绝对路径，项目目录改名（activity-image-list →
+    download）后老记录的路径就失效了，于是「删除只删记录、文件留在磁盘」，
+    历史上那 153MB 孤儿就是这么来的。
+
+    规则：
+    * storage_path 指向的文件确实存在 → 不动（可能是管理员特意放的路径）；
+    * 失效或为空、而 files_dir/{file_id} 存在 → 改写为兜底路径；
+    * 两个都不存在（文件真丢了）→ 保持原样，留给管理员处置，不猜。
+    """
+    pool = await get_pool()
+    fixed = []
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT id, file_id, storage_path FROM share_file")
+            for row in await cur.fetchall():
+                fid = (row.get("file_id") or "").strip()
+                if not fid:              # 没有 file_id 算不出兜底路径
+                    continue
+                sp = (row.get("storage_path") or "").strip()
+                fallback = os.path.join(files_dir, fid)
+                if sp == fallback:       # 已经是兜底路径
+                    continue
+                if sp and os.path.exists(sp):     # 原路径有效，别动
+                    continue
+                if not os.path.exists(fallback):  # 文件真的没了，不猜
+                    continue
+                await cur.execute(
+                    "UPDATE share_file SET storage_path=%s WHERE id=%s",
+                    (fallback, row["id"]),
+                )
+                fixed.append({"id": row["id"], "file_id": fid,
+                              "old": sp, "new": fallback})
+            if fixed:
+                await conn.commit()
+    return fixed
 
 
 # ---------- 设置 ----------

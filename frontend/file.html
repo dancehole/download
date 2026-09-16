@@ -203,8 +203,8 @@
     <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2024302719号</a>
   </footer>
 
-  <script src="static/js/i18n.js?v=13"></script>
-  <script src="static/js/api.js?v=13"></script>
+  <script src="static/js/i18n.js?v=14"></script>
+  <script src="static/js/api.js?v=14"></script>
   <script>
   (function () {
     "use strict";
@@ -221,7 +221,7 @@
         expire_never: "永不过期",
         expired: "已过期",
         purged: "已清理",
-        purged_desc: "文件已过期并被自动删除",
+        purged_desc: "文件已被管理员清理",
         expire_until: "至 {t}",
         download: "下载文件",
         copy: "复制链接",
@@ -240,7 +240,7 @@
         expire_never: "Never",
         expired: "Expired",
         purged: "Cleaned",
-        purged_desc: "File expired and was deleted automatically",
+        purged_desc: "File was cleaned up by the admin",
         expire_until: "Until {t}",
         download: "Download File",
         copy: "Copy Link",
@@ -252,6 +252,8 @@
     };
 
     var lang = localStorage.getItem("lang") === "en" ? "en" : "zh";
+    // 后端返回的失效原因（如「链接已过期」），优先于通用文案显示
+    var serverError = null;
     function t(key, vars) {
       var s = (DICT[lang] && DICT[lang][key]) || DICT.zh[key] || key;
       if (vars) {
@@ -275,7 +277,7 @@
       $("downloadBtnText").textContent = t("download");
       $("copyLinkBtn").textContent = t("copy");
       $("errorTitle").textContent = t("error_title");
-      $("errorDesc").textContent = t("error_desc");
+      $("errorDesc").textContent = serverError || t("error_desc");
       $("closeBtn").textContent = t("close");
     }
     function toggleLang() {
@@ -358,7 +360,10 @@
           copyText(location.href.split("#")[0]);
         };
         show("cardFile");
-      }).catch(function () {
+      }).catch(function (e) {
+        // 404 不存在 / 410 已过期或已清理 → 显示后端给出的具体原因
+        serverError = (e && e.msg) ? e.msg : null;
+        applyLang();
         show("cardError");
       });
     }

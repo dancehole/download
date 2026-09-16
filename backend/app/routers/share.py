@@ -24,14 +24,27 @@ async def _resolve_photo(token: str, photo_id: int):
     return ev, p
 
 
-def _is_cleared(ev: dict) -> bool:
-    """相册本地照片已被删除（手动清理），分享页应拦截。"""
-    return bool(ev and ev.get("local_cleared_at"))
-
-
 def _cleared_message(ev: dict) -> str:
     name = ev.get("event_name") or "该"
     return f"{name} 相册已过期，请联系管理员获取"
+
+
+def _block_reason(ev):
+    """分享链接被屏蔽的原因；None 表示可正常访问。
+
+    两种屏蔽情形（注意：**都不会**删除本地文件）：
+    1. 管理员手动清理了本地照片 → 空壳相册，链接失效；
+    2. 相册到达过期时间 → 只拦截链接，文件原样保留，管理员可续期或清理。
+    """
+    if not ev:
+        return None
+    if ev.get("local_cleared_at"):
+        return _cleared_message(ev)
+    expires_at = ev.get("expires_at")
+    if expires_at and expires_at <= datetime.now():
+        name = ev.get("event_name") or "该"
+        return f"{name} 相册分享链接已过期，请联系管理员获取"
+    return None
 
 
 def _file_response(path: str, filename: str, media: str, download: bool, cache: bool = False):
@@ -51,8 +64,9 @@ async def share_info(token: str):
     ev = await _resolve_event(token)
     if not ev:
         return fail(404, "相册不存在或链接已失效")
-    if _is_cleared(ev):
-        return fail(410, _cleared_message(ev))
+    blocked = _block_reason(ev)
+    if blocked:
+        return fail(410, blocked)
     await counter_store.incr("ev", ev["id"], "view")
     tags = await models.get_tags(ev["id"])
     data = event_to_dict(ev)
@@ -65,8 +79,9 @@ async def share_photos(token: str, tag: str = "", page: int = 1, size: int = 30)
     ev = await _resolve_event(token)
     if not ev:
         return fail(404, "相册不存在或链接已失效")
-    if _is_cleared(ev):
-        return fail(410, _cleared_message(ev))
+    blocked = _block_reason(ev)
+    if blocked:
+        return fail(410, blocked)
     size = max(1, min(int(size), 100))
     page = max(1, int(page))
     tag = tag.strip() or None
@@ -82,8 +97,9 @@ async def share_photos(token: str, tag: str = "", page: int = 1, size: int = 30)
 @router.get("/share/{token}/photos/{photo_id}/preview")
 async def share_preview(token: str, photo_id: int):
     ev, p = await _resolve_photo(token, photo_id)
-    if ev and _is_cleared(ev):
-        return fail(410, _cleared_message(ev))
+    blocked = _block_reason(ev)
+    if blocked:
+        return fail(410, blocked)
     if not p:
         return fail(404, "照片不存在")
     if not os.path.exists(p["preview_path"]):
@@ -95,8 +111,9 @@ async def share_preview(token: str, photo_id: int):
 @router.get("/share/{token}/photos/{photo_id}/original")
 async def share_original(token: str, photo_id: int, download: int = 0):
     ev, p = await _resolve_photo(token, photo_id)
-    if ev and _is_cleared(ev):
-        return fail(410, _cleared_message(ev))
+    blocked = _block_reason(ev)
+    if blocked:
+        return fail(410, blocked)
     if not p:
         return fail(404, "照片不存在")
     if not os.path.exists(p["original_path"]):
@@ -111,8 +128,9 @@ async def share_original(token: str, photo_id: int, download: int = 0):
 @router.get("/share/{token}/photos/{photo_id}/raf")
 async def share_raf(token: str, photo_id: int, download: int = 1):
     ev, p = await _resolve_photo(token, photo_id)
-    if ev and _is_cleared(ev):
-        return fail(410, _cleared_message(ev))
+    blocked = _block_reason(ev)
+    if blocked:
+        return fail(410, blocked)
     if not p:
         return fail(404, "照片不存在")
     if not p["raf_path"] or not os.path.exists(p["raf_path"]):

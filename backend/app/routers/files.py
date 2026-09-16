@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -12,6 +13,8 @@ from ..response import ok, fail, share_file_to_dict
 
 router = APIRouter()
 
+logger = logging.getLogger(__name__)
+
 CHUNK = 1024 * 1024  # 1MB 分块流式写盘
 
 
@@ -23,6 +26,30 @@ def _gen_file_id() -> str:
 
 def _gen_token() -> str:
     return secrets.token_urlsafe(18)[:24]
+
+
+def _local_candidates(f: dict) -> list:
+    """本地文件的候选路径。
+
+    记录里的 storage_path 是上传时的绝对路径；项目目录改名 / 搬迁后它会失效，
+    所以同时把 FILES_DIR/{file_id} 作为兜底候选——删除与下载都必须按同样的
+    顺序尝试，否则会出现「记录删了、文件还在」的孤儿（历史上真有 153MB 的）。
+    """
+    cands = []
+    sp = (f.get("storage_path") or "").strip()
+    if sp:
+        cands.append(sp)
+    fid = (f.get("file_id") or "").strip()
+    if fid:   # 空 file_id 会算出 FILES_DIR 目录本身，必须挡住
+        fallback = os.path.join(FILES_DIR, fid)
+        if fallback not in cands:
+            cands.append(fallback)
+    return cands
+
+
+def _is_expired(f: dict) -> bool:
+    exp = f.get("expires_at")
+    return bool(exp and exp < datetime.now())
 
 
 async def _stream_to_disk(upload: UploadFile, dest: str) -> int:
@@ -121,21 +148,40 @@ async def delete_share_file(file_id: str, user: dict = Depends(current_super)):
     if not f:
         return fail(404, "文件不存在")
 
-    if oss_service.is_enabled() and f.get("oss_key"):
-        try:
-            oss_service.delete_object(f["oss_key"])
-        except Exception:
-            pass
+    # OSS 对象：key 存在就必须尝试删除，失败即视为未删干净（不静默忽略）
+    oss_error = None
+    if f.get("oss_key"):
+        if oss_service.is_enabled():
+            try:
+                oss_service.delete_object(f["oss_key"])
+            except Exception as e:
+                oss_error = str(e)[:200]
+        else:
+            oss_error = "OSS 当前未启用，远程对象可能残留"
 
-    local = f.get("storage_path") or os.path.join(FILES_DIR, file_id)
-    if local and os.path.exists(local):
+    # 本地文件：storage_path（含失效兜底）+ FILES_DIR/file_id 全部尝试
+    removed_local = []
+    local_error = None
+    for path in _local_candidates(f):
+        if not path or not os.path.exists(path):
+            continue
         try:
-            os.remove(local)
-        except OSError:
-            pass
+            os.remove(path)
+            removed_local.append(path)
+        except OSError as e:
+            local_error = f"{path}: {e}"
+            logger.warning("delete share file %s: remove local failed: %s", file_id, e)
 
     await models.delete_share_file(f["id"])
-    return ok({"success": True})
+    if oss_error or local_error:
+        # 数据库记录已删；把未删干净的存储位置明确告知管理员，便于人工复核
+        return ok({
+            "success": False,
+            "oss_error": oss_error,
+            "local_error": local_error,
+            "removed_local": removed_local,
+        })
+    return ok({"success": True, "removed_local": removed_local})
 
 
 # ── 公共分享 ────────────────────────────────────────────────
@@ -146,6 +192,11 @@ async def share_file_info(token: str):
     f = await models.get_share_file_by_token(token)
     if not f:
         return fail(404, "文件不存在或链接已失效")
+    # 过期 / 已清理：只失效链接，本地文件与 OSS 对象都保留（由管理员手动释放）
+    if f.get("purged_at"):
+        return fail(410, "文件已过期并被清理，请联系管理员获取")
+    if _is_expired(f):
+        return fail(410, "文件分享链接已过期，请联系管理员获取")
     await counter_store.incr("sf", f["id"], "view")
     return ok(share_file_to_dict(f))
 
@@ -156,10 +207,10 @@ async def share_file_download(token: str):
     f = await models.get_share_file_by_token(token)
     if not f:
         return fail(404, "文件不存在或链接已失效")
-    if f["expires_at"] and f["expires_at"] < datetime.now():
-        return fail(410, "文件链接已过期")
     if f.get("purged_at"):
-        return fail(410, "文件已过期并被自动清理")
+        return fail(410, "文件已过期并被清理，请联系管理员获取")
+    if _is_expired(f):
+        return fail(410, "文件分享链接已过期，请联系管理员获取")
 
     await counter_store.incr("sf", f["id"], "dl")
 
@@ -168,10 +219,9 @@ async def share_file_download(token: str):
         if url:
             return RedirectResponse(url, status_code=302)
 
-    local = f.get("storage_path") or ""
-    if not local or not os.path.exists(local):
-        local = os.path.join(FILES_DIR, f["file_id"])
-    if not os.path.exists(local):
+    # 与删除保持同一套路径解析：storage_path 失效时兜底 FILES_DIR/{file_id}
+    local = next((p for p in _local_candidates(f) if p and os.path.exists(p)), None)
+    if not local:
         return fail(404, "文件已丢失，请联系管理员")
     return FileResponse(
         local,

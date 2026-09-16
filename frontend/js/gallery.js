@@ -593,8 +593,10 @@
       const ev = await API.shareInfo(TOKEN);
       state.event = ev;
       applyI18n();
-      // 仅当本地照片已被手动清理（local_cleared）才拦截分享页；
-      // 仅过期的相册仍可正常浏览，文件不会自动删除。
+      // 服务端已在 /share/{token} 统一拦截两种情况（都不会删本地文件）：
+      // 1) 本地照片被管理员手动清理 → 空壳相册；
+      // 2) 相册已过期 → 只屏蔽链接，文件仍在，管理员可续期或清理。
+      // 拦截时返回 code=410 + 具体原因，由下面的 catch 显示。
       await loadPhotos(true);
     } catch (e) {
       const msg = (e && e.msg) ? e.msg : I18N.t("link_invalid");

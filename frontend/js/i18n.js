@@ -182,6 +182,7 @@
       cleaned_local_desc: "本地照片文件已删除，分享页访问将提示“相册已过期，请联系管理员”。如需重新上传，请先删除整个相册再新建。",
       cleaned_oss_title: "OSS 已清空",
       cleaned_oss_desc: "该相册在 OSS 上的照片已删除，本地文件仍在。",
+      cleaned_oss_chip: "OSS 已清空",
       stat_downloads: "下载 {d}",
       stat_combined: "访问 {v} · 下载 {d}",
       views: "访问",
@@ -222,6 +223,7 @@
       delete_file_confirm: "确定删除此共享文件？文件本体和分享链接都会删除。",
       delete_file_success: "文件已删除",
       delete_file_failed: "删除文件失败",
+      delete_file_partial: "记录已删除，但仍有文件未清干净：{detail}（请到服务器人工复核）",
       upload_file_success: "上传成功，链接已复制",
       upload_file_failed: "上传失败",
 
@@ -457,6 +459,7 @@
       cleaned_local_desc: "Local photo files were deleted; the share page will show “album expired, contact admin”. To re-upload, delete the whole album and create a new one.",
       cleaned_oss_title: "OSS cleared",
       cleaned_oss_desc: "Photos of this album on OSS were deleted; local files remain.",
+      cleaned_oss_chip: "OSS cleared",
       stat_downloads: "{d} downloads",
       stat_combined: "{v} views · {d} downloads",
       views: "Views",
@@ -497,6 +500,7 @@
       delete_file_confirm: "Delete this shared file? The file and its share link will be removed.",
       delete_file_success: "File deleted",
       delete_file_failed: "Failed to delete file",
+      delete_file_partial: "Record deleted, but some files were not removed: {detail} (please check the server)",
       upload_file_success: "Uploaded, link copied",
       upload_file_failed: "Upload failed",
 

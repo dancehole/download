@@ -196,6 +196,11 @@ async def clear_event_oss(event_id: str, user: dict = Depends(current_photograph
     ev = await models.get_manageable_event(event_id, user)
     if not ev:
         return fail(404, "活动不存在")
+    # OSS 未启用（或配置失效）时若还有指向 OSS 的照片，必须先中止：
+    # 继续跑会把 photo.oss_* 清成 NULL，桶里的对象就再也找不到引用了
+    pending = await models.count_event_oss_photos(ev["id"])
+    if pending and not oss_service.is_enabled():
+        return fail(503, "OSS 当前未启用，未清理任何对象（已中止，避免丢失对象引用）")
     n = cleanup_service.clear_oss(ev)
     if n == -1:
         return fail(502, "OSS 清理失败，请稍后重试")
@@ -226,4 +231,6 @@ async def delete_event(event_id: str, user: dict = Depends(current_photographer)
         return fail(404, "活动不存在")
 
     result = await cleanup_service.delete_album(ev)
+    if not result.get("success"):
+        return fail(502, result.get("message") or "相册删除失败，请稍后重试")
     return ok(result)
