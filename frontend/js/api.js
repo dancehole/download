@@ -135,6 +135,9 @@
     clearLocal: function (id) {
       return request("/events/" + encodeURIComponent(id) + "/clear-local", { method: "POST" });
     },
+    ossUsage: function (id, refresh) {
+      return request("/events/" + encodeURIComponent(id) + "/oss-usage" + (refresh ? "?refresh=1" : ""));
+    },
     regenShare: function (id) {
       return request("/events/" + encodeURIComponent(id) + "/share", { method: "POST" });
     },

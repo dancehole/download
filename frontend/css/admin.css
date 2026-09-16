@@ -819,3 +819,22 @@ input { font-family: inherit; }
   .admin-add-row .btn { width: 100%; }
   .users-table .user-albums { max-width: none; }
 }
+
+/* 窄屏顶栏：375px 时 .topbar-right（用户名 + 设置 + 中文/EN + 退出登录）的
+   min-content 宽度之和超过视口，靠 flex 收缩不下来 → 整页横向滚动（0.5 屏）。
+   这里允许顶栏换行 + 用户名省略，控件一个都不隐藏。
+   2026-09-16 做「OSS 占用」验收时发现（上一个折叠面板测试的 375px 断言因设备
+   模拟没生效而假绿，innerWidth 实际是 509 而非 375）。 */
+@media (max-width: 760px) {
+  .topbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 60px;
+    padding: 10px 14px;
+    row-gap: 8px;
+    justify-content: flex-start;
+  }
+  .topbar-left { flex-wrap: wrap; row-gap: 6px; gap: 10px; min-width: 0; }
+  .topbar-right { flex-wrap: wrap; row-gap: 6px; gap: 8px; margin-left: auto; min-width: 0; }
+  .who { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; margin-right: 0; }
+}

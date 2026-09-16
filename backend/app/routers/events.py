@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 from datetime import datetime, timedelta
 
@@ -208,6 +209,74 @@ async def clear_event_oss(event_id: str, user: dict = Depends(current_photograph
     await models.clear_event_oss_keys(ev["id"])
     await models.mark_event_oss_cleared(ev["id"])
     return ok({"oss_deleted": n})
+
+
+@router.get("/events/{event_id}/oss-usage")
+async def get_event_oss_usage(event_id: str, refresh: int = 0,
+                              user: dict = Depends(current_photographer)):
+    """相册的 OSS 占用（涉及计费）。两个口径分开返回，界面上也要分开显示：
+
+    * 相册级 `objects/bytes`：按 `{event_id}/` 前缀 ListObjects 累加，**实时准确**，
+      正是「清空 OSS」会释放掉的量 → 用来决定清哪个相册；
+    * 桶级 `bucket`：OSS 的 GetBucketStat，**阿里云按桶计费的口径**，
+      但官方说明数据有约 1 小时延迟，且包含桶里**全部**前缀（目前只有本项目的相册与共享文件）。
+
+    `?refresh=1` 跳过进程内缓存（相册级 60s / 桶级 5min），供界面「刷新」按钮使用。
+    OSS 调用是同步阻塞的，这里丢到线程里跑，避免阻塞事件循环。
+    """
+    ev = await models.get_manageable_event(event_id, user)
+    if not ev:
+        return fail(404, "活动不存在")
+
+    now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not oss_service.is_enabled():
+        return ok({
+            "enabled": False, "event_id": ev["event_id"],
+            "objects": 0, "bytes": 0, "bytes_text": "0 B", "by_kind": [],
+            "bucket": None, "checked_at": now_text,
+        })
+
+    use_cache = not refresh
+    try:
+        usage = await asyncio.to_thread(
+            oss_service.usage_of_prefix, f"{ev['event_id']}/", use_cache)
+    except Exception as e:
+        # 查不到必须如实报错，不能显示成「占用 0」——那会让管理员误判计费
+        return fail(502, f"OSS 用量查询失败：{type(e).__name__}")
+
+    bucket = await asyncio.to_thread(oss_service.bucket_stat, use_cache)
+    bucket_payload = None
+    if bucket:
+        stat_time = bucket.get("stat_time")
+        if isinstance(stat_time, (int, float)):
+            stat_time = datetime.fromtimestamp(stat_time).strftime("%Y-%m-%d %H:%M")
+        elif stat_time:
+            stat_time = str(stat_time)
+        bucket_payload = {
+            "objects": bucket["objects"],
+            "bytes": bucket["bytes"],
+            "bytes_text": format_size(bucket["bytes"]),
+            "standard_text": format_size(bucket["standard_bytes"]),
+            "infrequent_access_text": format_size(bucket["infrequent_access_bytes"]),
+            "archive_text": format_size(bucket["archive_bytes"]),
+            "stat_time": stat_time,
+        }
+
+    return ok({
+        "enabled": True,
+        "event_id": ev["event_id"],
+        "objects": usage["objects"],
+        "bytes": usage["bytes"],
+        "bytes_text": format_size(usage["bytes"]),
+        "by_kind": [
+            {"kind": k, "objects": v["objects"], "bytes": v["bytes"],
+             "bytes_text": format_size(v["bytes"])}
+            for k, v in sorted(usage["by_kind"].items())
+        ],
+        "bucket": bucket_payload,
+        "cached": bool(usage.get("cached")),
+        "checked_at": now_text,
+    })
 
 
 @router.post("/events/{event_id}/clear-local")

@@ -272,15 +272,19 @@ const SNAP = `JSON.stringify({
     await cdp.shot("06-相册管理员视角");
 
     // ───── 8. 手机端（375px）无横向溢出 ─────
-    await cdp.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 780, deviceScaleFactor: 2, mobile: true });
-    await sleep(500);
+    // 注意：必须用 deviceScaleFactor=1 / mobile=false，否则 innerWidth 不是 375
+    // （曾用 mobile:true 导致 innerWidth=509，断言变成假绿 —— 2026-09-16 修）
+    await cdp.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 780, deviceScaleFactor: 1, mobile: false });
+    await sleep(800);
     await click(cdp, "#segTabBasic");
     const mob = JSON.parse(await cdp.eval(`JSON.stringify({
       overflow: document.documentElement.scrollWidth - window.innerWidth,
+      iw: window.innerWidth,
       panelW: Math.round(document.getElementById("albumSettingsPanel").getBoundingClientRect().width),
       tabsScroll: document.querySelector(".seg-tabs").scrollWidth,
       tabsClient: document.querySelector(".seg-tabs").clientWidth,
     })`));
+    check("375px 设备模拟真的生效", Math.abs(mob.iw - 375) <= 2, "innerWidth=" + mob.iw);
     check("手机端无横向溢出", mob.overflow <= 0, JSON.stringify(mob));
     check("手机端面板宽度贴合视口", mob.panelW > 300 && mob.panelW <= 375, mob.panelW + "px");
     await cdp.shot("07-手机-展开");

@@ -1,4 +1,7 @@
-"""只读巡检：对比数据库照片记录与 OSS 实际对象。"""
+"""只读巡检：对比数据库照片记录与 OSS 实际对象，并打印用量/计费口径。
+
+用法：cd backend && venv/bin/python ../tests/audit-oss.py
+"""
 import asyncio
 import os
 import sys
@@ -11,6 +14,13 @@ sys.path.insert(0, os.path.join(
 from app import oss_service
 from app.db import get_pool, close_pool
 from app.models import get_setting
+
+
+def human(n):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:,.1f} {unit}"
+        n /= 1024.0
 
 
 async def main():
@@ -95,6 +105,35 @@ async def main():
     for f in sfs:
         k = f["oss_key"]
         print(f"  {f['file_id']}: oss_key={k!r} 存在={k in existing if k else '无key'}")
+
+    # ── 用量与计费口径（与后台「空间与清理」显示的数字同源：oss_service）──
+    print("\n=== OSS 用量（相册级 = ListObjects 实时；桶级 = GetBucketStat 计费口径）===")
+    total_ev = 0
+    for e in events:
+        u = oss_service.usage_of_prefix(f"{e['event_id']}/", use_cache=False)
+        total_ev += u["bytes"]
+        kinds = " · ".join(f"{k} {human(v['bytes'])}/{v['objects']}个"
+                           for k, v in sorted(u["by_kind"].items()))
+        print(f"  相册 {e['event_id']}: {human(u['bytes'])} / {u['objects']} 个对象"
+              + (f"    [{kinds}]" if kinds else ""))
+    uf = oss_service.usage_of_prefix("files/", use_cache=False)
+    print(f"  共享文件 files/: {human(uf['bytes'])} / {uf['objects']} 个对象")
+
+    st = oss_service.bucket_stat(use_cache=False)
+    if not st:
+        print("  桶计费口径: 取不到（无 oss:GetBucketStat 权限或网络问题）")
+    else:
+        print(f"  桶计费口径: {human(st['bytes'])} / {st['objects']} 个对象"
+              f"（标准 {human(st['standard_bytes'])} / 低频 {human(st['infrequent_access_bytes'])}"
+              f" / 归档 {human(st['archive_bytes'])}）")
+        print(f"  统计时间: {st['stat_time']}（OSS 侧数据约 1 小时延迟，与实时值有差属正常）")
+        st_time = st["stat_time"]
+        if isinstance(st_time, (int, float)):
+            from datetime import datetime as _dt
+            print(f"  统计时间(本地时间): {_dt.fromtimestamp(st_time):%Y-%m-%d %H:%M}")
+        diff = st["bytes"] - total_ev - uf["bytes"]
+        print(f"  桶总量 −（各相册 + 共享文件）= {human(diff)}"
+              + ("   << 差异偏大，检查桶里是否有其他来源" if abs(diff) > 1024 * 1024 else "   （一致）"))
 
     await close_pool()
 

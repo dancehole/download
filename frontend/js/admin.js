@@ -16,6 +16,7 @@
     editUser: null,    // 正在编辑授权相册的账号
     albumSettingsOpen: false, // 相册设置面板是否展开（默认收起，保持相册页纯净）
     albumSeg: "basic",        // 相册设置内当前分段：basic | admins | cleanup
+    ossUsage: null,           // 当前相册的 OSS 用量（涉及计费，按需异步加载）
   };
 
   // 相册设置面板的分段映射（顺序即标签顺序）
@@ -186,6 +187,7 @@
       state.currentEvent = await API.getEvent(state.currentEvent.event_id);
       renderDetail();
       await loadThumbs();   // OSS key 已清空，刷新缩略图走本地回退
+      loadOssUsage(true);   // 强制重查：清空后该相册的 OSS 占用应显示 0
     } catch (e) {
       toast((e && e.msg) || I18N.t("load_failed"), "err");
     }
@@ -202,6 +204,57 @@
       await loadThumbs();   // 照片行已清空，列表显示「暂无照片」
     } catch (e) {
       toast((e && e.msg) || I18N.t("load_failed"), "err");
+    }
+  }
+
+  // ===== OSS 占用（涉及计费）=====
+  // 两个口径必须分开显示，别让管理员把两者混为一谈：
+  //   相册级 = 该相册前缀 {event_id}/ 下对象累加（实时准确，就是「清空 OSS」会释放的量）
+  //   桶级   = OSS GetBucketStat（阿里云按桶计费的口径，官方说明约 1 小时延迟）
+  function renderOssUsage(d) {
+    const el = $("ossUsageInfo");
+    const detail = $("ossUsageDetail");
+    if (!el) return;
+    if (!d.enabled) {                       // OSS 未启用，谈不上用量
+      el.textContent = I18N.t("oss_disabled");
+      detail.hidden = true;
+      return;
+    }
+    el.textContent = d.objects
+      ? I18N.t("oss_occupied", { size: d.bytes_text, n: d.objects })
+      : I18N.t("oss_none");
+
+    const parts = [];
+    const kinds = (d.by_kind || []).map((k) => `${k.kind} ${k.bytes_text} / ${k.objects}`);
+    if (kinds.length) parts.push(I18N.t("oss_by_kind", { detail: kinds.join(" · ") }));
+    if (d.bucket) {
+      let t = I18N.t("oss_bucket_total", { size: d.bucket.bytes_text, n: d.bucket.objects });
+      if (d.bucket.stat_time) t += " " + I18N.t("oss_bucket_delay", { t: d.bucket.stat_time });
+      parts.push(t);
+    } else {
+      parts.push(I18N.t("oss_bucket_unavailable"));
+    }
+    parts.push(I18N.t("oss_billing_note"));
+    detail.textContent = parts.join(" · ");
+    detail.hidden = false;
+  }
+
+  async function loadOssUsage(force) {
+    const ev = state.currentEvent;
+    if (!ev) return;
+    const el = $("ossUsageInfo");
+    if (el && !force) el.textContent = I18N.t("oss_loading");
+    try {
+      const d = await API.ossUsage(ev.event_id, !!force);
+      // 期间可能已切相册，别让旧响应盖到新相册上
+      if (!state.currentEvent || state.currentEvent.event_id !== ev.event_id) return;
+      state.ossUsage = d;
+      renderOssUsage(d);
+      updateAlbumSettingsSummary(state.currentEvent);
+      if (force) toast(I18N.t("oss_refreshed"), "ok");
+    } catch (e) {
+      if (el) el.textContent = I18N.t("oss_error", { detail: (e && e.msg) || "" });
+      $("ossUsageDetail").hidden = true;
     }
   }
 
@@ -428,6 +481,10 @@
     try {
       const ev = await API.getEvent(eventId);
       state.currentEvent = ev;
+      // 换相册了：上一个相册的 OSS 用量必须先作废，否则会显示错数字
+      state.ossUsage = null;
+      $("ossUsageInfo").textContent = "";
+      $("ossUsageDetail").hidden = true;
       // 每次进相册都回到「纯净」视图：面板收起 + 落在基本设置分段
       setAlbumSettingsOpen(false);
       setAlbumSeg("basic");
@@ -435,6 +492,7 @@
       if (isSuper() && state.users.length === 0) await loadUsers();
       renderDetail();
       await loadThumbs();
+      loadOssUsage(false);   // OSS 占用（涉及计费）：不 await，别拖慢进相册
     } catch (e) {
       toast(I18N.t("not_found_event"), "err");
       showView("viewEvents");
@@ -1194,6 +1252,10 @@
   function setAlbumSeg(seg) {
     state.albumSeg = SEG_TABS[seg] ? seg : "basic";
     syncAlbumSeg();
+    // 进「空间与清理」时确保 OSS 用量已加载（有 60s 进程内缓存，重复进不会反复打 OSS）
+    if (state.albumSeg === "cleanup" && state.currentEvent && !state.ossUsage) {
+      loadOssUsage(false);
+    }
   }
 
   // 收起状态下也能看到关键信息：过期时间 + 空间占用
@@ -1205,6 +1267,13 @@
     else if (ev.oss_cleared) parts.push(I18N.t("storage_oss_cleared", { size: ev.storage_size_text || I18N.t("storage_none") }));
     else if (ev.storage_size) parts.push(I18N.t("storage_occupied", { size: ev.storage_size_text }));
     else parts.push(I18N.t("storage_none"));
+    // OSS 占用（相册级，涉及计费）——已加载过才显示，避免摘要被异步查询拖住
+    const oss = state.ossUsage;
+    if (oss && oss.enabled) {
+      parts.push(oss.objects
+        ? I18N.t("oss_occupied", { size: oss.bytes_text, n: oss.objects })
+        : I18N.t("oss_none"));
+    }
     el.textContent = parts.join(" · ");
   }
 
@@ -1365,6 +1434,7 @@
     $("saveEventSettingsBtn").addEventListener("click", saveEventSettings);
     $("clearOssBtn").addEventListener("click", clearOss);
     $("clearLocalBtn").addEventListener("click", clearLocal);
+    $("ossRefreshBtn").addEventListener("click", () => loadOssUsage(true));
 
     // 相册设置折叠面板：展开/收起 + 分段切换
     $("albumSettingsToggle").addEventListener("click", () => setAlbumSettingsOpen(!state.albumSettingsOpen));
